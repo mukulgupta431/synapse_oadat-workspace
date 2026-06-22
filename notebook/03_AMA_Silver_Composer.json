@@ -1,0 +1,222 @@
+{
+	"name": "03_AMA_Silver_Composer",
+	"properties": {
+		"folder": {
+			"name": "Misc"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "5a9e3e01-7859-44d1-b6c8-2fb25c617440"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql.functions import when, col, lit, lower, trim\n",
+					"import requests\n",
+					"from bs4 import BeautifulSoup\n",
+					"from pyspark.sql import SparkSession"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"ALL_JOURNAL_URL = \"https://jamanetwork.com/pages/new-issns\"\n",
+					"silver_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/silver/American Medical Association (AMA)/all/'\n",
+					"\n",
+					"Year = 2025\n",
+					"\n",
+					"# APC for OA Journa is 3000 USD. This needs to be validated. Pleae check below url for latest price\n",
+					"# https://jamanetwork.com/journals/jamanetworkopen/pages/for-authors\n",
+					"# APC for Hybrid journal is 5000 USD. This need to be validated. Please check the journal website for latest price"
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"headers = {\n",
+					"    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'\n",
+					"}\n",
+					"response = requests.get(ALL_JOURNAL_URL, headers=headers)\n",
+					"soup = BeautifulSoup(response.text, 'html.parser')\n",
+					"div_table = soup.find(\"div\", {\"class\": \"table\"})\n",
+					"\n",
+					"rows = div_table.find_all('div', class_='row')\n",
+					"\n",
+					"# Extract data into a list of dictionaries\n",
+					"data = []\n",
+					"for row in rows:\n",
+					"    journal_full_title = row.find('div', {'data-label': 'Journal Full Title'}).text\n",
+					"    issn_print = row.find('div', {'data-label': 'ISSN (Print)'}).text\n",
+					"    issn_online = row.find('div', {'data-label': 'ISSN (Online)'}).text\n",
+					"    data.append({\n",
+					"        'Title': journal_full_title,\n",
+					"        'Print_ISSN': issn_print,\n",
+					"        'Online_ISSN': issn_online\n",
+					"    })\n",
+					"\n",
+					"# Convert to PySpark DataFrame\n",
+					"df = spark.createDataFrame(data)\n",
+					"\n",
+					"df = df.withColumn(\"Print_ISSN\", when(col(\"Print_ISSN\") == 'Online Only', lit(\"\")).otherwise(col(\"Print_ISSN\")))\n",
+					"\n",
+					"# Show DataFrame\n",
+					"df.show(truncate=False)\n",
+					""
+				],
+				"execution_count": 5
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"new_df = df.select(\n",
+					"    lit(\"American Medical Association (AMA)\").alias(\"Publisher\"),\n",
+					"    col(\"Print_ISSN\").alias(\"ISSN1\"),\n",
+					"    col(\"Online_ISSN\").alias(\"ISSN2\"),\n",
+					"    col(\"Title\").alias(\"Title\"),\n",
+					"    lit(\"Publisher Website via Misc Publisher APCs list\").alias(\"Source\"),\n",
+					"    lit(\"Hybrid\").alias(\"Model\"),\n",
+					"    lit(\"\").alias(\"Model Notes\"), \n",
+					"    lit(\"5000\").alias(\"APC\"),\n",
+					"    lit(\"USD\").alias(\"Currency\"),\n",
+					"    lit(\"CC BY, CC BY-NC-ND\").alias(\"License Types\"),\n",
+					"    lit(Year).alias(\"Year\"),\n",
+					"    lit(\"\").alias(\"JoiningID\"),\n",
+					"    lit(\"\").alias(\"PublisherID\"),\n",
+					"    lit(\"\").alias(\"Publisher URL\"),\n",
+					"    lit(\"\").alias(\"Imprint\"),\n",
+					"    lit(\"American Medical Association (AMA)\").alias(\"Society\")\n",
+					")\n",
+					"\n",
+					"# Not a good idea, please check this before running\n",
+					"new_df = new_df.withColumn(\"Model\", when(lower(col(\"Title\")).contains(\"open\"), lit(\"Fully OA\")).otherwise(col(\"Model\")))\n",
+					"new_df = new_df.withColumn(\"APC\", when(lower(col(\"Title\")).contains(\"open\"), lit(\"3000\")).otherwise(col(\"APC\")))\n",
+					"new_df = new_df.withColumn(\"APC\", when(trim(lower(col(\"Title\"))) == \"jama health forum\", lit(\"3000\")).otherwise(col(\"APC\")))\n",
+					"\n",
+					""
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"desired_columns = [\n",
+					"    \"Publisher\", \"ISSN1\", \"ISSN2\", \"Title\", \"Source\", \"Model\", \"Model Notes\",\n",
+					"    \"APC\", \"Currency\", \"License Types\", \"Year\", \"PublisherID\", \"JoiningID\",\n",
+					"    \"Imprint\", \"Society\"\n",
+					"]\n",
+					"\n",
+					"# Reorder the columns based on desired schema\n",
+					"df_reordered = new_df.select([col for col in desired_columns if col in new_df.columns])"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"desired_columns.coalesce(1).write.mode(\"overwrite\").csv(silver_path, header=True,  encoding=\"UTF-8\")"
+				],
+				"execution_count": 5
+			}
+		]
+	}
+}

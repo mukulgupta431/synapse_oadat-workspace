@@ -1,0 +1,327 @@
+{
+	"name": "16_Emerald_Bronze_Composer",
+	"properties": {
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "7fdd2591-8899-4baf-99cd-5981e5fc1e5f"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql.types import StructType, StructField, StringType\n",
+					"import requests\n",
+					"from bs4 import BeautifulSoup\n",
+					"from pyspark.sql import SparkSession\n",
+					"from pyspark.sql.functions import udf, split"
+				],
+				"execution_count": 1
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"hybrid_journals_url = \"https://www.emeraldgrouppublishing.com/publish-with-us/publish-open-access/journal\"\n",
+					"hybrid_journal_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/Emerald Publishing/hybrid/'"
+				],
+				"execution_count": 2
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"platinum_journals_url = \"https://www.emeraldgrouppublishing.com/publish-with-us/open-research-emerald/platinum-open-access-journals\"\n",
+					"platinum_journal_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/Emerald Publishing/oa/'"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"def get_issn_eissn(journal_url):\n",
+					"    try:\n",
+					"        # Fetch the HTML content\n",
+					"        response = requests.get(journal_url)\n",
+					"        soup = BeautifulSoup(response.content, \"html.parser\")\n",
+					"       \n",
+					"        # Find the div containing the ISSN and eISSN\n",
+					"        div = soup.find(\"div\", class_=\"overview__journal-owner-issn\")\n",
+					"        # Extract ISSN and eISSN\n",
+					"        issn = div.find(string=\"ISSN:\").find_next(string=True).strip() if div else None\n",
+					"        eissn = div.find(string=\"eISSN:\").find_next(string=True).strip() if div else None\n",
+					"        return f\"{issn}, {eissn}\"\n",
+					"    except Exception as e:\n",
+					"        return None"
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"def get_all_hybrid_journals():\n",
+					"    # Define schema for the DataFrame\n",
+					"    schema = StructType([\n",
+					"            StructField(\"journal_name\", StringType(), True),\n",
+					"            StructField(\"journal_url\", StringType(), True),\n",
+					"            StructField(\"price_GBP\", StringType(), True),\n",
+					"            StructField(\"price_USD\", StringType(), True),\n",
+					"            StructField(\"price_EUR\", StringType(), True)\n",
+					"    ])\n",
+					"\n",
+					"    response = requests.get(hybrid_journals_url)\n",
+					"    soup = BeautifulSoup(response.text, 'html.parser')\n",
+					"\n",
+					"    oa_jouranl_table = soup.find(\"table\")\n",
+					"    table_rows = oa_jouranl_table.find_all(\"tr\")[1:]\n",
+					"    # Initialize an empty list to store extracted data\n",
+					"    data = []\n",
+					"    # Loop through the rows to extract journal data\n",
+					"    for row in table_rows:\n",
+					"        columns = row.find_all(\"td\")\n",
+					"        journal_name = columns[0].find(\"a\").text\n",
+					"        journal_url = columns[0].find(\"a\")[\"href\"]\n",
+					"        apc_gbp = columns[1].text\n",
+					"        apc_usd = columns[2].text\n",
+					"        apc_eur = columns[3].text\n",
+					"        data.append((journal_name, journal_url, apc_gbp, apc_usd, apc_eur))\n",
+					"    # Create the DataFrame\n",
+					"    journal_df = spark.createDataFrame(data, schema=schema)\n",
+					"\n",
+					"    return journal_df"
+				],
+				"execution_count": 5
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"journal_df = get_all_hybrid_journals()\n",
+					"# Register the function as a UDF\n",
+					"get_issn_eissn_udf = udf(get_issn_eissn, StringType())\n",
+					"journal_df = journal_df.withColumn(\"ISSN_eISSN\", get_issn_eissn_udf(journal_df[\"journal_url\"]))\n",
+					"journal_df = journal_df.withColumn(\"issn\", split(journal_df[\"ISSN_eISSN\"], \", \")[0]) \\\n",
+					"       .withColumn(\"eissn\", split(journal_df[\"ISSN_eISSN\"], \", \")[1]) \\\n",
+					"       .drop(\"ISSN_eISSN\")"
+				],
+				"execution_count": 6
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"journal_df.coalesce(1).write.mode(\"overwrite\").csv(hybrid_journal_path, header=True,  encoding=\"UTF-8\")"
+				],
+				"execution_count": 7
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"def get_all_platinum_journals():\n",
+					"\n",
+					"\n",
+					"    response = requests.get(platinum_journals_url)\n",
+					"    soup = BeautifulSoup(response.text, 'html.parser')\n",
+					"\n",
+					"    platinum_jouranl_table = soup.find(\"table\")\n",
+					"\n",
+					"    # Extract titles and ISSNs\n",
+					"    rows = platinum_jouranl_table.find_all(\"tr\")[1:]  # Skip the header row\n",
+					"    data = []\n",
+					"    for row in rows:\n",
+					"        cols = row.find_all(\"td\")\n",
+					"        \n",
+					"        # First column\n",
+					"        title_1 = cols[0].text.strip()\n",
+					"        link_1 = cols[0].find(\"a\")\n",
+					"        url_1 = link_1[\"href\"] if link_1 else None\n",
+					"        issn_1 = cols[1].text.strip()\n",
+					"\n",
+					"        # Second column\n",
+					"        title_2 = cols[2].text.strip()\n",
+					"        link_2 = cols[2].find(\"a\")\n",
+					"        url_2 = link_2[\"href\"] if link_2 else None\n",
+					"        issn_2 = cols[3].text.strip()\n",
+					"\n",
+					"        data.append((title_1, issn_1, url_1))\n",
+					"        data.append((title_2, issn_2, url_2))\n",
+					"\n",
+					"    # Define the schema\n",
+					"    columns = [\"Title\", \"ISSN\", \"URL\"]\n",
+					"\n",
+					"    # Create PySpark DataFrame\n",
+					"    df = spark.createDataFrame(data, columns)\n",
+					"\n",
+					"    return df\n",
+					"    \n",
+					""
+				],
+				"execution_count": 8
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"platinum_df = get_all_platinum_journals()"
+				],
+				"execution_count": 9
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"platinum_df.coalesce(1).write.mode(\"overwrite\").csv(platinum_journal_path, header=True,  encoding=\"UTF-8\")"
+				],
+				"execution_count": 10
+			},
+			{
+				"cell_type": "markdown",
+				"metadata": {
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"The following codes are using to create OA Journal List"
+				]
+			}
+		]
+	}
+}

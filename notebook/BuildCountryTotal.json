@@ -1,0 +1,213 @@
+{
+	"name": "BuildCountryTotal",
+	"properties": {
+		"folder": {
+			"name": "MarketSizing"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "vcore48",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "56g",
+			"driverCores": 8,
+			"executorMemory": "56g",
+			"executorCores": 8,
+			"numExecutors": 3,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "true",
+				"spark.dynamicAllocation.minExecutors": "3",
+				"spark.dynamicAllocation.maxExecutors": "5",
+				"spark.autotune.trackingId": "f51f6c05-583c-4f2a-86f9-e26f528a3f61"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/vcore48",
+				"name": "vcore48",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/vcore48",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 10,
+				"cores": 8,
+				"memory": 56,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import SparkSession\n",
+					"from pyspark.sql import functions as F\n",
+					"from pyspark.sql import types as T\n",
+					"from pyspark.sql import functions as F\n",
+					"from pyspark.sql.types import *\n",
+					"from delta.tables import DeltaTable"
+				],
+				"execution_count": 1
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Partitioning\n",
+					"# spark.conf.set(\"spark.sql.shuffle.partitions\", \"2000\")   # tune later if partitions are too small/large\n",
+					"\n",
+					"# Shuffle + heartbeat stability\n",
+					"#spark.conf.set(\"spark.network.timeout\", \"800s\")\n",
+					"#spark.conf.set(\"spark.executor.heartbeatInterval\", \"60s\")\n",
+					"spark.conf.set(\"spark.shuffle.io.maxRetries\", \"10\")\n",
+					"spark.conf.set(\"spark.shuffle.io.retryWait\", \"10s\")\n",
+					"\n",
+					"# Skew handling\n",
+					"spark.conf.set(\"spark.sql.adaptive.enabled\", \"true\")\n",
+					"\n",
+					"# Broadcast joins\n",
+					"spark.conf.set(\"spark.sql.autoBroadcastJoinThreshold\", -1)  # disable auto\n",
+					""
+				],
+				"execution_count": 2
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# =====================\n",
+					"# CONFIG\n",
+					"# =====================\n",
+					"INPUT_JSON_PATH = \"abfss://openalex@dloadatdl.dfs.core.windows.net/processed_v1/works_csv_final/\"\n",
+					"OUTPUT_PATH = \"abfss://openalex@dloadatdl.dfs.core.windows.net/processed_v1/country_totals/\"\n",
+					"df = spark.read.format(\"delta\").load(INPUT_JSON_PATH)"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import functions as F\n",
+					"\n",
+					"def explode_country(df, country_col, label_prefix):\n",
+					"    \"\"\"Explode countries per author type and compute per-country weights.\"\"\"\n",
+					"    exploded = (\n",
+					"        df\n",
+					"        .withColumn(\"country\", F.explode(F.split(F.col(country_col), \",\")))\n",
+					"        .where(F.col(\"country\").isNotNull() & (F.col(\"country\") != \"\"))\n",
+					"        .withColumn(\n",
+					"            f\"articles_per_country_{label_prefix}\",\n",
+					"            F.lit(1.0) / F.size(F.array_distinct(F.split(F.col(country_col), \",\")))\n",
+					"        )\n",
+					"        # Placeholder DOI columns\n",
+					"        .withColumn(\"doi_all\", F.when(F.lit(label_prefix == \"all\"), F.col(\"doi\")).otherwise(F.lit(\"\")))\n",
+					"        .withColumn(\"doi_first\", F.when(F.lit(label_prefix == \"first\"), F.col(\"doi\")).otherwise(F.lit(\"\")))\n",
+					"        .withColumn(\"doi_corresp\", F.when(F.lit(label_prefix == \"corresp\"), F.col(\"doi\")).otherwise(F.lit(\"\")))\n",
+					"        .withColumn(\"doi_best\", F.when(F.lit(label_prefix == \"best_guess\"), F.col(\"doi\")).otherwise(F.lit(\"\")))\n",
+					"        # Count flags\n",
+					"        .withColumn(\"count_all\", F.when(F.lit(label_prefix == \"all\"), F.lit(1)).otherwise(F.lit(0)))\n",
+					"        .withColumn(\"count_first\", F.when(F.lit(label_prefix == \"first\"), F.lit(1)).otherwise(F.lit(0)))\n",
+					"        .withColumn(\"count_corresp\", F.when(F.lit(label_prefix == \"corresp\"), F.lit(1)).otherwise(F.lit(0)))\n",
+					"        .withColumn(\"count_best\", F.when(F.lit(label_prefix == \"best_guess\"), F.lit(1)).otherwise(F.lit(0)))\n",
+					"        # Ensure *all* articles_per_country_* columns exist\n",
+					"        .withColumn(\"articles_per_country_all\",\n",
+					"                    F.when(F.lit(label_prefix == \"all\"), F.col(f\"articles_per_country_{label_prefix}\")).otherwise(F.lit(None)))\n",
+					"        .withColumn(\"articles_per_country_first\",\n",
+					"                    F.when(F.lit(label_prefix == \"first\"), F.col(f\"articles_per_country_{label_prefix}\")).otherwise(F.lit(None)))\n",
+					"        .withColumn(\"articles_per_country_corresp\",\n",
+					"                    F.when(F.lit(label_prefix == \"corresp\"), F.col(f\"articles_per_country_{label_prefix}\")).otherwise(F.lit(None)))\n",
+					"        .withColumn(\"articles_per_country_best_guess\",\n",
+					"                    F.when(F.lit(label_prefix == \"best_guess\"), F.col(f\"articles_per_country_{label_prefix}\")).otherwise(F.lit(None)))\n",
+					"    )\n",
+					"    return exploded\n",
+					""
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# ---------------------------\n",
+					"# Create per-author-type country tables\n",
+					"# ---------------------------\n",
+					"all_authors = explode_country(df, \"country_codes_all_authors\", \"all\")\n",
+					"first_authors = explode_country(df, \"country_codes_first_author\", \"first\")\n",
+					"corresp_authors = explode_country(df, \"country_codes_corresp_author\", \"corresp\")\n",
+					"\n",
+					"# best guess = corresp if present else first\n",
+					"df_best = df.withColumn(\n",
+					"    \"country_codes_best_guess\",\n",
+					"    F.when(F.col(\"country_codes_corresp_author\").isNotNull() & (F.col(\"country_codes_corresp_author\") != \"\"),\n",
+					"           F.col(\"country_codes_corresp_author\"))\n",
+					"    .otherwise(F.col(\"country_codes_first_author\"))\n",
+					")\n",
+					"best_guess = explode_country(df_best, \"country_codes_best_guess\", \"best_guess\")"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# ---------------------------\n",
+					"# Union all exploded tables\n",
+					"# ---------------------------\n",
+					"country_records = all_authors.unionByName(first_authors).unionByName(corresp_authors).unionByName(best_guess)\n",
+					""
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# ---------------------------\n",
+					"# Aggregate into country_totals\n",
+					"# ---------------------------\n",
+					"country_totals = (\n",
+					"    country_records.groupBy(\n",
+					"        \"year\", \"oa_status\", \"country\", \"type\", \"type_crossref\", \"license\", \"version\", \"host_type\"\n",
+					"    ).agg(\n",
+					"        F.countDistinct(\"doi\").alias(\"articles\"),\n",
+					"        F.countDistinct(\"doi_all\").alias(\"articles_all\"),\n",
+					"        F.countDistinct(\"doi_first\").alias(\"articles_first\"),\n",
+					"        F.countDistinct(\"doi_corresp\").alias(\"articles_corresp\"),\n",
+					"        F.countDistinct(\"doi_best\").alias(\"articles_best\"),\n",
+					"        F.sum(\"count_all\").alias(\"count_all\"),\n",
+					"        F.sum(\"count_first\").alias(\"count_first\"),\n",
+					"        F.sum(\"count_corresp\").alias(\"count_corresp\"),\n",
+					"        F.sum(\"count_best\").alias(\"count_best\"),\n",
+					"        F.sum(\"articles_per_country_all\").alias(\"articles_per_country_all\"),\n",
+					"        F.sum(\"articles_per_country_first\").alias(\"articles_per_country_first\"),\n",
+					"        F.sum(\"articles_per_country_corresp\").alias(\"articles_per_country_corresp\"),\n",
+					"        F.sum(\"articles_per_country_best_guess\").alias(\"articles_per_country_best_guess\")\n",
+					"    )\n",
+					"    .withColumnRenamed(\"country\", \"ISO2_Code\")\n",
+					"    .orderBy(\"year\", \"oa_status\", \"ISO2_Code\")\n",
+					")\n",
+					"\n",
+					""
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# ---------------------------\n",
+					"# Write output\n",
+					"# ---------------------------\n",
+					"country_totals.write.format(\"delta\").mode(\"overwrite\").save(OUTPUT_PATH)\n",
+					"print(f\"✅ country_totals successfully written to {OUTPUT_PATH}\")"
+				]
+			}
+		]
+	}
+}

@@ -1,0 +1,215 @@
+{
+	"name": "Import_tidy_part_2",
+	"properties": {
+		"folder": {
+			"name": "MarketSizing"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "2551aa48-f2c3-420c-bb43-81b419cd0d94"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import SparkSession\n",
+					"from pyspark.sql import functions as F\n",
+					"from pyspark.sql import types as T\n",
+					"from pyspark.sql import functions as F\n",
+					"from pyspark.sql.types import *\n",
+					""
+				],
+				"execution_count": 1
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"INPUT_SOURCES_PATH = \"abfss://openalex@dloadatdl.dfs.core.windows.net/processed/sources/\"\n",
+					"\n",
+					"sources_df = (\n",
+					"    spark.read\n",
+					"    .format(\"csv\")\n",
+					"    .option(\"header\", \"true\")   # ✅ tells Spark first row is header\n",
+					"    .load(INPUT_SOURCES_PATH)\n",
+					")\n",
+					"\n",
+					"max_length = sources_df.select(F.max(F.length(\"abbreviated_title\"))).collect()[0][0]\n",
+					"print(max_length)"
+				],
+				"execution_count": 2
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# =====================\n",
+					"# CONFIG\n",
+					"# =====================\n",
+					"INPUT_JSON_PATH = \"abfss://openalex@dloadatdl.dfs.core.windows.net/processed_v1/doi_tidy_all/\"\n",
+					"#INPUT_JSON_PATH = \"abfss://openalex@dloadatdl.dfs.core.windows.net/raw/data/works/*/*.gz\"\n",
+					"OUTPUT_FINAL_PATH_1 =\"abfss://openalex@dloadatdl.dfs.core.windows.net/processed_v1/doi_tidy\"\n",
+					"OUTPUT_FINAL_PATH_2 =\"abfss://openalex@dloadatdl.dfs.core.windows.net/processed_v1/doi_tidy_topics\"\n",
+					"\n",
+					"# =====================\n",
+					"# LOAD JSON\n",
+					"# =====================\n",
+					"#works_raw = spark.read.json(INPUT_JSON_PATH).alias(\"w\")\n",
+					"#works_raw = spark.read.option(\"multiline\", \"true\").json(INPUT_JSON_PATH).alias(\"w\")\n",
+					"#works_raw = spark.read.option(\"multiline\", \"true\").schema(works_schema).json(INPUT_JSON_PATH)\n",
+					"#works_raw = spark.read.format(\"delta\").load(INPUT_JSON_PATH)\n",
+					"#works_raw.printSchema()"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# ---------------------------\n",
+					"# 1. Build doi_tidy (exclude topic_list)\n",
+					"# ---------------------------\n",
+					"columns_to_keep = [\n",
+					"    \"DOI_tidy_ID\",\n",
+					"    \"year\", \"type\", \"type_crossref\",\n",
+					"    \"sources_id\", \"sources_id_as_stated\",\n",
+					"    \"issn_l\", \"issn_l_as_stated\",\n",
+					"    \"oa_status\", \"license\", \"version\", \"host_type\",\n",
+					"    \"Is_Article\", \"Articles\",\n",
+					"    \"cited_by_count\", \"cited_works_count\"\n",
+					"]\n",
+					"\n",
+					"doi_tidy_df = works_raw.select(*[c for c in columns_to_keep if c in works_raw.columns])\n",
+					"\n",
+					"# ---------------------------\n",
+					"# 2. Build doi_tidy_topics\n",
+					"# ---------------------------\n",
+					"# Split topic_list into array of topic_and_score\n",
+					"df_topics = works_raw.withColumn(\n",
+					"    \"topic_array\",\n",
+					"    F.split(F.col(\"topic_list\"), \";\")\n",
+					")\n",
+					"\n",
+					"# Explode array -> one row per topic_and_score\n",
+					"df_topics = df_topics.withColumn(\"topic_and_score\", F.explode_outer(\"topic_array\"))\n",
+					"\n",
+					"# Remove blanks\n",
+					"df_topics = df_topics.filter(F.col(\"topic_and_score\") != \"\")\n",
+					"\n",
+					"# Split into topic_id and score\n",
+					"df_topics = df_topics.withColumn(\"topic_id\", F.split(\"topic_and_score\", \"\\\\|\").getItem(0)) \\\n",
+					"                     .withColumn(\"score\", F.split(\"topic_and_score\", \"\\\\|\").getItem(1).cast(\"double\"))\n",
+					"\n",
+					"# Aggregate: per DOI_tidy_ID and topic_id\n",
+					"doi_tidy_topics_df = (\n",
+					"    df_topics.groupBy(\"DOI_tidy_ID\", \"topic_id\")\n",
+					"    .agg(\n",
+					"        F.sum(\"score\").alias(\"score\"),\n",
+					"        F.count(\"*\").alias(\"n\")\n",
+					"    )\n",
+					")"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"\n",
+					"#doi_tidy_df = spark.read.format(\"delta\").load(OUTPUT_FINAL_PATH_1)\n",
+					"#doi_tidy_df.select(\"type\").distinct().show(truncate=False)"
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"#max_length = doi_tidy_df.select(F.max(F.length(\"type\"))).collect()[0][0]\n",
+					"#print(max_length)"
+				],
+				"execution_count": 5
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"doi_tidy_df.select(\"oa_status\").distinct().show(truncate=False)\n",
+					"doi_tidy_df.select(\"license\").distinct().show(truncate=False)"
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"(\n",
+					"    doi_tidy_df\n",
+					"    .write\n",
+					"    .format(\"delta\")   # Use Delta format\n",
+					"    .mode(\"overwrite\") # Overwrite existing data\n",
+					"    .save(OUTPUT_FINAL_PATH_1)\n",
+					")"
+				],
+				"execution_count": 5
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"(\n",
+					"    doi_tidy_topics_df\n",
+					"    .write\n",
+					"    .format(\"delta\")   # Use Delta format\n",
+					"    .mode(\"overwrite\") # Overwrite existing data\n",
+					"    .save(OUTPUT_FINAL_PATH_2)\n",
+					")"
+				],
+				"execution_count": 6
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"#doi_tidy_df.write.mode(\"overwrite\").option(\"header\", \"true\").csv(OUTPUT_FINAL_PATH_1)\n",
+					"#doi_tidy_topics_df.write.mode(\"overwrite\").option(\"header\", \"true\").csv(OUTPUT_FINAL_PATH_2)"
+				],
+				"execution_count": 11
+			}
+		]
+	}
+}

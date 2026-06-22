@@ -1,0 +1,26 @@
+{
+	"name": "ds_springerNature_all_from_internet",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "ls_SpringerNature",
+			"type": "LinkedServiceReference"
+		},
+		"folder": {
+			"name": "Springer Nature"
+		},
+		"annotations": [],
+		"type": "DelimitedText",
+		"typeProperties": {
+			"location": {
+				"type": "HttpServerLocation",
+				"relativeUrl": "/rest/v1/content/26709340/data/v3"
+			},
+			"columnDelimiter": ",",
+			"escapeChar": "\\",
+			"firstRowAsHeader": true,
+			"quoteChar": "\""
+		},
+		"schema": []
+	},
+	"type": "Microsoft.Synapse/workspaces/datasets"
+}

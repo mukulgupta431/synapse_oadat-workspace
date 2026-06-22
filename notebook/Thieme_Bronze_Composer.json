@@ -1,0 +1,113 @@
+{
+	"name": "Thieme_Bronze_Composer",
+	"properties": {
+		"folder": {
+			"name": "Misc"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "a0e705aa-b2fd-4d4b-8070-3b523e1cc40e"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"import pandas as pd"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"useCols = 'A:H'\n",
+					"skiprow = 9\n",
+					"nrow= 174\n",
+					"sheet_name = '2025 APC Price List'\n",
+					"csv_file_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/Thieme/all/Title-List.csv'\n",
+					"excel_file_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/Thieme/import/All.xlsx'"
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"df = pd.read_excel(\n",
+					"    excel_file_path,\n",
+					"    sheet_name=sheet_name,\n",
+					"    usecols=useCols,\n",
+					"    skiprows=skiprow,\n",
+					"    nrows=nrow            \n",
+					")\n",
+					"\n",
+					"df.to_csv(csv_file_path, index=False)"
+				],
+				"execution_count": 5
+			}
+		]
+	}
+}

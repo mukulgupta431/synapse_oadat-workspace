@@ -1,0 +1,185 @@
+{
+	"name": "08_ACM_Association for Computing Machinery_Composer",
+	"properties": {
+		"folder": {
+			"name": "Misc"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "5469c1ec-cd61-4962-b290-751ef144b6da"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 5
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import SparkSession\n",
+					"from pyspark.sql.functions import col, trim, lit, upper, when\n",
+					"\n",
+					"# This list should be validated with latest one\n",
+					"# Please check this link for latest information \n",
+					"# https://www.acm.org/publications/openaccess\n",
+					"fully_open_access = [\"TACO\",\"THRI\",\"TOPLAS\",\"TOPML\",\"JDS\",\"COLA\",\"CACM\",\"DGOV\",\"DTRAP\",\"FAC\",\"ICPS\",\"PACMPL\",\"PACMSE\"]\n",
+					"\n",
+					"# The default value should be validated with latest one\n",
+					"# Plese check theis link for latest default APC\n",
+					"# https://www.acm.org/publications/openaccess#oapricing\n",
+					"default_apc = 1800\n",
+					"Year = 2025\n",
+					"\n",
+					"kbart_temp_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/Association for Computing Machinery (ACM)/kbart/*.txt'\n",
+					"silver_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/silver/Association for Computing Machinery (ACM)/all/'\n",
+					""
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Step 1: Read the file into a PySpark DataFrame, specifying the delimiter as '\\t'\n",
+					"kbart_df = spark.read.option(\"delimiter\", \"\\t\").csv(kbart_temp_path, header=True, inferSchema=True)\n",
+					"\n",
+					"# Remove rows where publication_type is not \"serial\".\n",
+					"# Ensure last_date_online is blank (null).\n",
+					"# Ensure publisher is not \"ACM\".\n",
+					"\n",
+					"filtered_kbart_df = kbart_df.filter(\n",
+					"    (col(\"publication_type\") == \"Serial\") &\n",
+					"    (col(\"publisher_name\") == \"Association for Computing Machinery\") &\n",
+					"    ((trim(col(\"date_last_issue_online\")).isNull()) | (trim(col(\"date_last_issue_online\")) == \"\"))\n",
+					")\n",
+					""
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"new_df = filtered_kbart_df.select(\n",
+					"    lit(\"Association for Computing Machinery (ACM)\").alias(\"Publisher\"),\n",
+					"    col(\"print_identifier\").alias(\"ISSN1\"),\n",
+					"    col(\"online_identifier\").alias(\"ISSN2\"),\n",
+					"    col(\"publication_title\").alias(\"Title\"),\n",
+					"    lit(\"Publisher Website via Misc Publisher APCs list\").alias(\"Source\"),\n",
+					"    #lit(\"\").alias(\"Model\"),\n",
+					"    when(upper(col(\"title_id\")).isin(fully_open_access), \"Fully OA\").otherwise(\"Hybrid\").alias(\"Model\"),\n",
+					"    lit(default_apc).alias(\"APC\"),\n",
+					"    lit(\"USD\").alias(\"Currency\"),\n",
+					"    lit(\"\").alias(\"License Types\"),\n",
+					"    lit(\"\").alias(\"Imprint\"),\n",
+					"    lit(\"\").alias(\"Model Notes\"),\n",
+					"    lit(Year).alias(\"Year\"),\n",
+					"    col(\"title_id\").alias(\"PublisherID\"),\n",
+					"    col(\"title_id\").alias(\"JoiningID\"),\n",
+					"    col(\"title_url\").alias(\"Publisher URL\"),\n",
+					"    col(\"publisher_name\").alias(\"Society\")\n",
+					")"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"desired_columns = [\n",
+					"    \"Publisher\", \"ISSN1\", \"ISSN2\", \"Title\", \"Source\", \"Model\", \"Model Notes\",\n",
+					"    \"APC\", \"Currency\", \"License Types\", \"Year\", \"PublisherID\", \"JoiningID\",\n",
+					"    \"Imprint\", \"Society\"\n",
+					"]\n",
+					"\n",
+					"# Reorder the columns based on desired schema\n",
+					"df_reordered = new_df.select([col for col in desired_columns if col in new_df.columns])"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"df_reordered.coalesce(1).write.mode(\"overwrite\").csv(silver_path, header=True,  encoding=\"UTF-8\")\n",
+					"new_df.show(n=100, truncate=False)"
+				]
+			}
+		]
+	}
+}

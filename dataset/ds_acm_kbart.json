@@ -1,0 +1,28 @@
+{
+	"name": "ds_acm_kbart",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "ls_oadat_apc",
+			"type": "LinkedServiceReference"
+		},
+		"folder": {
+			"name": "acm"
+		},
+		"annotations": [],
+		"type": "DelimitedText",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobStorageLocation",
+				"fileName": "kbart.txt",
+				"folderPath": "bronze/Association for Computing Machinery (ACM)/kbart",
+				"container": "apc"
+			},
+			"columnDelimiter": ",",
+			"escapeChar": "\\",
+			"firstRowAsHeader": true,
+			"quoteChar": "\""
+		},
+		"schema": []
+	},
+	"type": "Microsoft.Synapse/workspaces/datasets"
+}

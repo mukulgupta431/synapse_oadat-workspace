@@ -1,0 +1,219 @@
+{
+	"name": "17_SAGE_Bronze_Composer",
+	"properties": {
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "ffe5a7c2-a36a-4014-a43a-aa96908d2060"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"import pandas as pd"
+				],
+				"execution_count": 8
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"ALL_JOURNAL_EXCEL_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/SAGE/import/all_title_list.xlsx'\n",
+					"ALL_JOURNAL_CSV_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/SAGE/all/all_title_list.csv'\n",
+					"\n",
+					"OA_JOURNAL_EXCEL_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/SAGE/import/oa_title.xlsx'\n",
+					"OA_JOURNAL_CSV_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/SAGE/oa/oa_title.csv'\n",
+					"\n",
+					"GOLD_OA_JOURNAL_EXCEL_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/SAGE/import/gold_oa_title.xlsx'\n",
+					"GOLD_OA_JOURNAL_CSV_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/SAGE/gold-oa/gold_oa_title.csv'\n",
+					"\n",
+					"GOLD_OA_PRICELIST_EXCEL_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/SAGE/import/gold_oa_price_list.xlsx'\n",
+					"GOLD_OA_PRICELIST_CSV_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/SAGE/gold-oa-pricelist/gold_oa_price_list.csv'"
+				],
+				"execution_count": 9
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# All Journal configuration\n",
+					"\n",
+					"useCols = 'A:J'\n",
+					"skiprow = 0\n",
+					"# nrow= 1059\n",
+					"nrow= 1057\n",
+					"sheet_name = '(2025PREM2025) (PREM2025) Premi'\n",
+					"\n",
+					"df = pd.read_excel(\n",
+					"    ALL_JOURNAL_EXCEL_PATH,\n",
+					"    sheet_name=sheet_name,\n",
+					"    usecols=useCols,\n",
+					"    skiprows=skiprow,\n",
+					"    nrows=nrow            \n",
+					")\n",
+					"\n",
+					"df.to_csv(ALL_JOURNAL_CSV_PATH , index=False)"
+				],
+				"execution_count": 10
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# OA Journal Configuration\n",
+					"useCols = 'A:G'\n",
+					"skiprow = 0\n",
+					"nrow= 1085\n",
+					"sheet_name = 'Sage Choice Pricing 2025'\n",
+					"\n",
+					"df = pd.read_excel(\n",
+					"    OA_JOURNAL_EXCEL_PATH,\n",
+					"    sheet_name=sheet_name,\n",
+					"    usecols=useCols,\n",
+					"    skiprows=skiprow,\n",
+					"    nrows=nrow            \n",
+					")\n",
+					"\n",
+					"df.to_csv(OA_JOURNAL_CSV_PATH , index=False)"
+				],
+				"execution_count": 11
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Gold OA Journal Configuration\n",
+					"useCols = 'A:K'\n",
+					"skiprow = 0\n",
+					"nrow= 224\n",
+					"sheet_name = '(2025GOLDOA25) (GOLDOA25) GOLD '\n",
+					"\n",
+					"df = pd.read_excel(\n",
+					"    GOLD_OA_JOURNAL_EXCEL_PATH,\n",
+					"    sheet_name=sheet_name,\n",
+					"    usecols=useCols,\n",
+					"    skiprows=skiprow,\n",
+					"    nrows=nrow            \n",
+					")\n",
+					"\n",
+					"df.to_csv(GOLD_OA_JOURNAL_CSV_PATH , index=False)"
+				],
+				"execution_count": 12
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Gold OA Journal Price List Configurtion\n",
+					"useCols = 'C:H'\n",
+					"skiprow = 0\n",
+					"nrow= 227\n",
+					"sheet_name = 'Gold OA Pricing List'\n",
+					"\n",
+					"df = pd.read_excel(\n",
+					"    GOLD_OA_PRICELIST_EXCEL_PATH,\n",
+					"    sheet_name=sheet_name,\n",
+					"    usecols=useCols,\n",
+					"    skiprows=skiprow,\n",
+					"    nrows=nrow            \n",
+					")\n",
+					"\n",
+					"df.to_csv(GOLD_OA_PRICELIST_CSV_PATH , index=False)"
+				],
+				"execution_count": 13
+			}
+		]
+	}
+}

@@ -1,0 +1,331 @@
+{
+	"name": "33_ACM_Association for Computing Machinery_Composer_v2",
+	"properties": {
+		"folder": {
+			"name": "Misc"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "7a9b3772-3bfc-4bc7-a5f4-5fc02fd62acc"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 5
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"%pip install playwright\n",
+					"%pip install agentql"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"import requests\n",
+					"from pyspark.sql import SparkSession\n",
+					"from pyspark.sql.functions import col, trim, lit, upper, when\n",
+					"import nest_asyncio\n",
+					"from pyspark.sql.types import StructType, StructField, StringType\n",
+					"from playwright.async_api import async_playwright\n",
+					"import agentql \n",
+					"import json\n",
+					"import asyncio\n",
+					"\n",
+					"fully_open_access = [\"TACO\",\"THRI\",\"TOPLAS\",\"TOPML\",\"JDS\",\"COLA\",\"CACM\",\"DGOV\",\"DTRAP\",\"FAC\",\"ICPS\",\"PACMPL\",\"PACMSE\"]\n",
+					"\n",
+					"default_apc = 1800\n",
+					"Year = 2024\n",
+					"\n",
+					"kbart_temp_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/Association for Computing Machinery (ACM)/kbart/*.txt'\n",
+					"silver_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/silver/Association for Computing Machinery (ACM)/all/'\n",
+					""
+				],
+				"execution_count": 6
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"def populate_oajournal_df_from_json(input_data):\n",
+					"    # Ensure input is a dictionary\n",
+					"    if isinstance(input_data, str):\n",
+					"        data = json.loads(input_data)  # Parse JSON string\n",
+					"    elif isinstance(input_data, dict):\n",
+					"        data = input_data  # Use as is\n",
+					"    else:\n",
+					"        raise TypeError(\"Input must be a JSON string or a dictionary\")\n",
+					"    # Extract the journal data\n",
+					"    journals = data.get(\"open_access_titles\", [])\n",
+					"    journal_data = []\n",
+					"    journal_article_list_price = data.get(\"Open_Access_Pricing\", {}).get(\"journal_article_list_price\", None)\n",
+					"    \n",
+					"    for journal in journals:\n",
+					"        name = journal[\"name\"]\n",
+					"        # Extract the title_id from the text within parentheses\n",
+					"        title_id = name[name.find(\"(\")+1 : name.find(\")\")]\n",
+					"        journal_data.append((name, title_id, journal_article_list_price))\n",
+					"    \n",
+					"    # Define the schema\n",
+					"    schema = StructType([\n",
+					"        StructField(\"name\", StringType(), True),\n",
+					"        StructField(\"title_id\", StringType(), True),\n",
+					"        StructField(\"apc\", StringType(), True)\n",
+					"    ])\n",
+					"    \n",
+					"    # Create a Spark DataFrame\n",
+					"    df = spark.createDataFrame(journal_data, schema=schema)\n",
+					"    return df"
+				],
+				"execution_count": 7
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"import os\n",
+					"os.environ[\"AGENTQL_API_KEY\"]='Gqq-9anMwmlM2Bz8HO_CqXQl4gEkauGNqBmAc6x4EU12gH-gPkzIig'\n",
+					"URL = 'https://www.acm.org/publications/openaccess'\n",
+					"# Apply nest_asyncio to allow nested event loops (important in Jupyter notebooks)\n",
+					"nest_asyncio.apply()\n",
+					"search_query = \"\"\"\n",
+					"{\n",
+					"    open_access_titles[] {\n",
+					"        name\n",
+					"    }\n",
+					"    Open_Access_Pricing {\n",
+					"        journal_article_list_price\n",
+					"    }\n",
+					"}\n",
+					"\"\"\"\n",
+					"\n",
+					"async def fetch_oa_journal_data(url: str, search_query: str):\n",
+					"    async with async_playwright() as playwright:\n",
+					"        browser = await playwright.chromium.launch(headless=True)\n",
+					"        page = await agentql.wrap_async(browser.new_page())\n",
+					"        await page.goto(url)\n",
+					"        print(url)\n",
+					"        # Query the page for ownership data\n",
+					"        response = await page.query_data(search_query)\n",
+					"        print(response)\n",
+					"        return response\n",
+					"\n",
+					"response = asyncio.run(fetch_oa_journal_data(URL, search_query))\n",
+					"oa_journal_df = populate_oajournal_df_from_json(response)\n",
+					"oa_journal_df.show()"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"default_apc = oa_journal_df.select(col(\"apc\")).collect()[0][0]\n",
+					"fully_open_access = [row.title_id for row in oa_journal_df.select(\"title_id\").collect()]\n",
+					""
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"def extract_oa_journal_spark_df(input_string):\n",
+					"    # Parse the input string as JSON\n",
+					"    data = json.loads(input_string)\n",
+					"    \n",
+					"    # Extract the journal data\n",
+					"    journals = data.get(\"open_access_titles\", [])\n",
+					"    journal_data = []\n",
+					"    \n",
+					"    for journal in journals:\n",
+					"        name = journal[\"name\"]\n",
+					"        # Extract the title_id from the text within parentheses\n",
+					"        title_id = name[name.find(\"(\")+1 : name.find(\")\")]\n",
+					"        journal_data.append((name, title_id))\n",
+					"    \n",
+					"    # Define the schema\n",
+					"    schema = StructType([\n",
+					"        StructField(\"name\", StringType(), True),\n",
+					"        StructField(\"title_id\", StringType(), True)\n",
+					"    ])\n",
+					"    \n",
+					"    # Create a Spark DataFrame\n",
+					"    df = spark.createDataFrame(journal_data, schema=schema)\n",
+					"    return df"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Step 1: Read the file into a PySpark DataFrame, specifying the delimiter as '\\t'\n",
+					"kbart_df = spark.read.option(\"delimiter\", \"\\t\").csv(kbart_temp_path, header=True, inferSchema=True)\n",
+					"\n",
+					"# Remove rows where publication_type is not \"serial\".\n",
+					"# Ensure last_date_online is blank (null).\n",
+					"# Ensure publisher is not \"ACM\".\n",
+					"\n",
+					"filtered_kbart_df = kbart_df.filter(\n",
+					"    (col(\"publication_type\") == \"Serial\") &\n",
+					"    (col(\"publisher_name\") == \"Association for Computing Machinery\") &\n",
+					"    ((trim(col(\"date_last_issue_online\")).isNull()) | (trim(col(\"date_last_issue_online\")) == \"\"))\n",
+					")\n",
+					""
+				],
+				"execution_count": 10
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"new_df = filtered_kbart_df.select(\n",
+					"    lit(\"Association for Computing Machinery (ACM)\").alias(\"Publisher\"),\n",
+					"    col(\"print_identifier\").alias(\"ISSN1\"),\n",
+					"    col(\"online_identifier\").alias(\"ISSN2\"),\n",
+					"    col(\"publication_title\").alias(\"Title\"),\n",
+					"    lit(\"Publisher Website via Misc Publisher APCs list\").alias(\"Source\"),\n",
+					"    #lit(\"\").alias(\"Model\"),\n",
+					"    when(upper(col(\"title_id\")).isin(fully_open_access), \"Fully OA\").otherwise(\"Hybrid\").alias(\"Model\"),\n",
+					"    lit(default_apc).alias(\"APC\"),\n",
+					"    lit(\"USD\").alias(\"Currency\"),\n",
+					"    lit(\"\").alias(\"License Types\"),\n",
+					"    lit(Year).alias(\"Year\"),\n",
+					"    col(\"title_id\").alias(\"PublisherID\"),\n",
+					"    col(\"title_url\").alias(\"Publisher URL\"),\n",
+					"    col(\"publisher_name\").alias(\"Society\")\n",
+					")"
+				],
+				"execution_count": 11
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"new_df.coalesce(1).write.mode(\"overwrite\").csv(silver_path, header=True,  encoding=\"UTF-8\")\n",
+					"new_df.show(n=100, truncate=False)"
+				],
+				"execution_count": 12
+			}
+		]
+	}
+}

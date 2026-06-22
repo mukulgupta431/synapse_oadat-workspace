@@ -1,0 +1,195 @@
+{
+	"name": "01_Elsevier_Bronze_Composer",
+	"properties": {
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "4fbe07a8-e398-4a47-88f7-771855a548a6"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"import pandas as pd"
+				],
+				"execution_count": 16
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"ALL_JOURNAL_EXCEL_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/elsevier/import/jnlactive.xlsx'\n",
+					"ALL_JOURNAL_CSV_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/elsevier/all/jnlactive.csv'"
+				],
+				"execution_count": 17
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"useCols = 'A:F'\n",
+					"skiprow = 0\n",
+					"nrow= 3131\n",
+					"sheet_name = 'Journals___Active'"
+				],
+				"execution_count": 18
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"df = pd.read_excel(\n",
+					"    ALL_JOURNAL_EXCEL_PATH,\n",
+					"    sheet_name=sheet_name,\n",
+					"    usecols=useCols,\n",
+					"    skiprows=skiprow,\n",
+					"    nrows=nrow            \n",
+					")\n",
+					"\n",
+					"df.to_csv(ALL_JOURNAL_CSV_PATH, index=False)"
+				],
+				"execution_count": 19
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"OA_JOURNAL_EXCEL_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/elsevier/import/article-publishing-charge.xlsx'\n",
+					"OA_JOURNAL_CSV_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/elsevier/oa/article-publishing-charge.csv'"
+				],
+				"execution_count": 20
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"useCols = 'A:G'\n",
+					"skiprow = 4\n",
+					"nrow= 2915\n",
+					"sheet_name = 'Sheet1'"
+				],
+				"execution_count": 21
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"df = pd.read_excel(\n",
+					"    OA_JOURNAL_EXCEL_PATH,\n",
+					"    sheet_name=sheet_name,\n",
+					"    usecols=useCols,\n",
+					"    skiprows=skiprow,\n",
+					"    nrows=nrow            \n",
+					")\n",
+					"\n",
+					"df.columns = ['ISSN', 'Title', 'Business model','USD','EUR','GBP','JPY']  # Replace with your actual headers\n",
+					"df.to_csv(OA_JOURNAL_CSV_PATH, index=False)\n",
+					""
+				],
+				"execution_count": 22
+			}
+		]
+	}
+}

@@ -1,0 +1,163 @@
+{
+	"name": "ImportFunders",
+	"properties": {
+		"folder": {
+			"name": "MarketSizing"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "vcore48",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "56g",
+			"driverCores": 8,
+			"executorMemory": "56g",
+			"executorCores": 8,
+			"numExecutors": 3,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "true",
+				"spark.dynamicAllocation.minExecutors": "3",
+				"spark.dynamicAllocation.maxExecutors": "5",
+				"spark.autotune.trackingId": "ecb6f6b8-ec42-4df4-b64d-2050ffd9f36c"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/vcore48",
+				"name": "vcore48",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/vcore48",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 10,
+				"cores": 8,
+				"memory": 56,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import SparkSession, functions as F, types as T"
+				],
+				"execution_count": 1
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"INPUT_JSON_PATH = \"abfss://openalex@dloadatdl.dfs.core.windows.net/raw/data/funders/*/*.gz\"\n",
+					"OUTPUT_FINAL_PATH_1 =\"abfss://openalex@dloadatdl.dfs.core.windows.net/processed_v1/funders_csv\"\n",
+					"OUTPUT_FINAL_PATH_2 =\"abfss://openalex@dloadatdl.dfs.core.windows.net/processed_v1/funders_counts\""
+				],
+				"execution_count": 2
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"funders_df = spark.read.json(INPUT_JSON_PATH)"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"\n",
+					"# -------------------------------\n",
+					"# 3. Flatten main funders metadata\n",
+					"# -------------------------------\n",
+					"\n",
+					"funders_csv = (\n",
+					"    funders_df.select(\n",
+					"        F.regexp_replace(F.col(\"id\"), \"https://openalex.org/\", \"\").alias(\"funders_id\"),\n",
+					"        F.regexp_replace(F.col(\"ids.openalex\"), \"https://openalex.org/\", \"\").alias(\"openalex_id\"),\n",
+					"        F.regexp_replace(F.col(\"ids.ror\"), \"https://ror.org/\", \"\").alias(\"ror_id\"),\n",
+					"        F.col(\"ids.crossref\").alias(\"crossref_id\"),\n",
+					"        F.to_json(F.col(\"ids\")).alias(\"other_ids_json\"),\n",
+					"\n",
+					"        F.to_json(F.col(\"roles\")).alias(\"roles\"),\n",
+					"\n",
+					"        F.col(\"country_code\"),\n",
+					"        F.col(\"grants_count\"),\n",
+					"\n",
+					"        F.trim(F.col(\"display_name\")).alias(\"display_name\"),\n",
+					"        F.trim(F.col(\"display_name\")).alias(\"name_as_stated\"),\n",
+					"        F.trim(F.concat_ws(\"~~~~\", F.col(\"alternate_titles\"))).alias(\"alternate_titles\"),\n",
+					"\n",
+					"        F.col(\"works_count\"),\n",
+					"        F.col(\"cited_by_count\"),\n",
+					"        F.col(\"summary_stats.2yr_mean_citedness\").alias(\"if2y\"),\n",
+					"        F.col(\"summary_stats.h_index\").alias(\"h_index\"),\n",
+					"        F.col(\"summary_stats.i10_index\").alias(\"i10_index\"),\n",
+					"        F.to_json(F.col(\"counts_by_year\")).alias(\"counts_by_year\"),\n",
+					"\n",
+					"        F.col(\"updated_date\"),\n",
+					"        F.col(\"created_date\")\n",
+					"    )\n",
+					")"
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# -------------------------------\n",
+					"# 4. Explode counts_by_year for child table\n",
+					"# -------------------------------\n",
+					"\n",
+					"funders_counts = (\n",
+					"    funders_df\n",
+					"    .withColumn(\"funders_id\", F.regexp_replace(F.col(\"id\"), \"https://openalex.org/\", \"\"))\n",
+					"    .withColumn(\"counts\", F.explode_outer(\"counts_by_year\"))\n",
+					"    .select(\n",
+					"        \"funders_id\",\n",
+					"        F.col(\"counts.year\").cast(T.IntegerType()).alias(\"year\"),\n",
+					"        F.col(\"counts.works_count\").cast(T.IntegerType()).alias(\"works_count\"),\n",
+					"        F.col(\"counts.cited_by_count\").cast(T.IntegerType()).alias(\"cited_by_count\"),\n",
+					"        F.col(\"counts.oa_works_count\").cast(T.IntegerType()).alias(\"oa_works_count\")\n",
+					"    )\n",
+					"    .filter(F.col(\"counts\").isNotNull())\n",
+					")"
+				],
+				"execution_count": 5
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"(funders_csv\n",
+					" .coalesce(1)\n",
+					" .write\n",
+					" .mode(\"overwrite\")\n",
+					" .option(\"header\", \"true\")\n",
+					" .csv(OUTPUT_FINAL_PATH_1))\n",
+					"\n",
+					"(funders_counts\n",
+					" .coalesce(1)\n",
+					" .write\n",
+					" .mode(\"overwrite\")\n",
+					" .option(\"header\", \"true\")\n",
+					" .csv(OUTPUT_FINAL_PATH_2))\n",
+					"\n",
+					"print(\"✅ funders_csv and funders_counts successfully written to Gen2.\")"
+				],
+				"execution_count": 7
+			}
+		]
+	}
+}

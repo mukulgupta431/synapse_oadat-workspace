@@ -1,0 +1,124 @@
+{
+	"name": "BuildWorksShort",
+	"properties": {
+		"folder": {
+			"name": "MarketSizing"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "vcore48",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "56g",
+			"driverCores": 8,
+			"executorMemory": "56g",
+			"executorCores": 8,
+			"numExecutors": 3,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "true",
+				"spark.dynamicAllocation.minExecutors": "3",
+				"spark.dynamicAllocation.maxExecutors": "5",
+				"spark.autotune.trackingId": "feab9c8c-c1d7-4e40-9859-1b8650d780b0"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/vcore48",
+				"name": "vcore48",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/vcore48",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 10,
+				"cores": 8,
+				"memory": 56
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import SparkSession\n",
+					"from pyspark.sql import functions as F\n",
+					"from pyspark.sql import types as T\n",
+					"from pyspark.sql import functions as F\n",
+					"from pyspark.sql.types import *\n",
+					"from delta.tables import DeltaTable"
+				],
+				"execution_count": 1
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Partitioning\n",
+					"# spark.conf.set(\"spark.sql.shuffle.partitions\", \"2000\")   # tune later if partitions are too small/large\n",
+					"\n",
+					"# Shuffle + heartbeat stability\n",
+					"#spark.conf.set(\"spark.network.timeout\", \"800s\")\n",
+					"#spark.conf.set(\"spark.executor.heartbeatInterval\", \"60s\")\n",
+					"spark.conf.set(\"spark.shuffle.io.maxRetries\", \"10\")\n",
+					"spark.conf.set(\"spark.shuffle.io.retryWait\", \"10s\")\n",
+					"\n",
+					"# Skew handling\n",
+					"spark.conf.set(\"spark.sql.adaptive.enabled\", \"true\")\n",
+					"\n",
+					"# Broadcast joins\n",
+					"spark.conf.set(\"spark.sql.autoBroadcastJoinThreshold\", -1)  # disable auto\n",
+					""
+				],
+				"execution_count": 2
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# =====================\n",
+					"# CONFIG\n",
+					"# =====================\n",
+					"INPUT_JSON_PATH = \"abfss://openalex@dloadatdl.dfs.core.windows.net/processed_v1/works_csv_final/\"\n",
+					"OUTPUT_PATH = \"abfss://openalex@dloadatdl.dfs.core.windows.net/processed_v1/works_short/\"\n",
+					"df = spark.read.format(\"delta\").load(INPUT_JSON_PATH)"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Transform to match BigQuery query\n",
+					"df_short = (\n",
+					"    df.select(\n",
+					"        \"doi\",\n",
+					"        \"works_id\",            # newly added for 2024\n",
+					"        \"sources_id\",\n",
+					"        F.col(\"cited_by_count\").cast(\"double\").alias(\"cited_by_count\"),\n",
+					"        F.col(\"cited_works_count\").cast(\"double\").alias(\"cited_works_count\"),\n",
+					"        F.when(F.col(\"oa_status\") == \"diamond\", \"gold\")\n",
+					"         .otherwise(F.col(\"oa_status\"))\n",
+					"         .alias(\"oa_status\"),\n",
+					"        \"year\"\n",
+					"    )\n",
+					")\n",
+					"\n",
+					"# Save as a new Delta table (overwrite or append as needed)\n",
+					"df_short.write.format(\"delta\").mode(\"overwrite\").save(OUTPUT_PATH)"
+				],
+				"execution_count": 4
+			}
+		]
+	}
+}

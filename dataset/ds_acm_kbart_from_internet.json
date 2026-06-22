@@ -1,0 +1,25 @@
+{
+	"name": "ds_acm_kbart_from_internet",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "ls_acm_kbart",
+			"type": "LinkedServiceReference"
+		},
+		"folder": {
+			"name": "acm"
+		},
+		"annotations": [],
+		"type": "DelimitedText",
+		"typeProperties": {
+			"location": {
+				"type": "HttpServerLocation"
+			},
+			"columnDelimiter": ",",
+			"escapeChar": "\\",
+			"firstRowAsHeader": true,
+			"quoteChar": "\""
+		},
+		"schema": []
+	},
+	"type": "Microsoft.Synapse/workspaces/datasets"
+}

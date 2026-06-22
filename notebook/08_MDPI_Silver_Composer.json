@@ -1,0 +1,304 @@
+{
+	"name": "08_MDPI_Silver_Composer",
+	"properties": {
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "6b05ec3f-bcec-4292-a43e-a07387a3d815"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import SparkSession, Row\n",
+					"from pyspark.sql.types import StructType, StructField, StringType\n",
+					"from pyspark.sql.functions import col, trim, lit, upper, when, regexp_extract, regexp_replace, col, substring_index\n",
+					"from bs4 import BeautifulSoup\n",
+					"import requests\n",
+					"from bs4 import BeautifulSoup"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"ALL_JOURNALS_URL = 'https://www.mdpi.com/about/journals'\n",
+					"ALL_APC_URL = 'https://www.mdpi.com/about/apc'\n",
+					"MDPI_URL = 'https://www.mdpi.com/'\n",
+					"MDPI_SILVER_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/silver/MDPI Open Access Publishing/all'\n",
+					"Year = 2025"
+				],
+				"execution_count": 2
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Get MDPI journals\n",
+					"\n",
+					"schema = StructType([\n",
+					"    StructField(\"journal_name\", StringType(), True),\n",
+					"    StructField(\"issn\", StringType(), True),\n",
+					"    StructField(\"title_url\", StringType(), True)\n",
+					"])\n",
+					"response = requests.get(ALL_JOURNALS_URL)\n",
+					"soup = BeautifulSoup(response.text, 'html.parser')\n",
+					"journal_table = soup.find(\"table\", {\"class\": \"journaltable new tablesorter top-border\"})\n",
+					"rows = soup.find_all(\"tr\")\n",
+					"\n",
+					"journals = []\n",
+					"\n",
+					"for row in rows:\n",
+					"       # Extract journal name\n",
+					"    journal_name_tag = row.find(\"td\", class_=\"journal-name-cell\")\n",
+					"    if journal_name_tag:\n",
+					"        journal_name = journal_name_tag.find(\"div\").get_text(strip=True)\n",
+					"        issn_tag = row.find_all(\"td\", align=\"center\", style=\"vertical-align:middle;\")\n",
+					"        issn = issn_tag[0].get_text(strip=True) if len(issn_tag) > 1 else None\n",
+					"        journal_url_tag = row.find(\"a\")\n",
+					"        journal_url = journal_url_tag.get(\"href\") if journal_url_tag else None\n",
+					"        journal_url = MDPI_URL + journal_url if journal_url else None\n",
+					"        # Append to the list\n",
+					"        if journal_name and issn:\n",
+					"            journals.append(Row(\n",
+					"                title=journal_name,\n",
+					"                title_issn=issn,\n",
+					"                title_url=journal_url\n",
+					"            ))\n",
+					"journals_df = spark.createDataFrame(journals, schema)\n",
+					"\n",
+					"journals_df = journals_df.withColumn(\n",
+					"    \"journal_name\",\n",
+					"    trim(regexp_replace(col(\"journal_name\"), \"[\\n*\\s]+\", \" \"))\n",
+					")"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# get mdpi journals APC\n",
+					"schema = StructType([\n",
+					"    StructField(\"journal_name\", StringType(), True),\n",
+					"    StructField(\"APC\", StringType(), True)\n",
+					"])\n",
+					"\n",
+					"response = requests.get(ALL_APC_URL)\n",
+					"soup = BeautifulSoup(response.text, 'html.parser')\n",
+					"journal_table = soup.find(\"table\", {\"class\": \"journaltable new tablesorter top-border\"})\n",
+					"rows = soup.find_all(\"tr\")\n",
+					"rows = rows[1:]\n",
+					"\n",
+					"journals_apc = []\n",
+					"for row in rows:\n",
+					"    # Extract journal name\n",
+					"    journal_name_tag = row.find(\"td\", class_=\"journal-name-cell\")\n",
+					"    journal_apc_tag = row.find(\"td\", align=\"center\")\n",
+					"    if journal_name_tag:\n",
+					"        journal_name = journal_name_tag.find(\"div\").get_text(strip=True)\n",
+					"    if journal_apc_tag:\n",
+					"        journal_apc = journal_apc_tag.get_text(strip=True)\n",
+					"    # Append to the list\n",
+					"    if journal_name and journal_apc:\n",
+					"        journals_apc.append(Row(\n",
+					"            title=journal_name,\n",
+					"            apc=journal_apc\n",
+					"        ))\n",
+					"journals_apc_df = spark.createDataFrame(journals_apc, schema)"
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Perform an inner join on 'journal_name' to combine the data\n",
+					"merged_df = journals_df.join(\n",
+					"    journals_apc_df,\n",
+					"    trim(journals_df['journal_name']) == trim(journals_apc_df['journal_name']),\n",
+					"    'inner'\n",
+					").select(\n",
+					"    journals_df['journal_name'].alias('Journal_name'),\n",
+					"    'issn',\n",
+					"    journals_apc_df['apc'].alias('APC'),\n",
+					"    journals_df['title_url'].alias('Title URL')\n",
+					")\n",
+					"\n",
+					"# Display the resulting DataFrame\n",
+					"merged_df = merged_df.orderBy(merged_df['Journal_name'])"
+				],
+				"execution_count": 5
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"new_df = merged_df.select(\n",
+					"    lit(\"MDPI Open Access Publishing\").alias(\"Publisher\"),\n",
+					"    col(\"issn\").alias(\"ISSN1\"),\n",
+					"    lit(\"\").alias(\"ISSN2\"),\n",
+					"    col(\"Journal_name\").alias(\"Title\"),\n",
+					"    lit(\"Publisher Website\").alias(\"Source\"),\n",
+					"    lit(\"Fully OA\").alias(\"Model\"),\n",
+					"    lit(\"\").alias(\"Model Notes\"),\n",
+					"    col(\"APC\").alias(\"APC\"),\n",
+					"    lit(\"CHF\").alias(\"Currency\"),\n",
+					"    lit(\"CC BY\").alias(\"License Types\"),\n",
+					"    lit(Year).alias(\"Year\"),\n",
+					"    col('Title URL').alias(\"Publisher URL\"),\n",
+					"    lit(\"\").alias(\"Imprint\"),\n",
+					"    lit(\"\").alias(\"Society\")\n",
+					")\n",
+					"\n",
+					"new_df = new_df.withColumn(\n",
+					"    \"PublisherID\",\n",
+					"    substring_index(\"Publisher URL\", \"/\", -1)\n",
+					")\n",
+					"\n",
+					"new_df = new_df.withColumn(\n",
+					"    \"JoiningID\",\n",
+					"    substring_index(\"Publisher URL\", \"/\", -1)\n",
+					")\n",
+					"\n",
+					"new_df = new_df.withColumn(\"APC\", regexp_replace(col(\"APC\"), \"[^0-9]\", \"\").cast(\"int\"))"
+				],
+				"execution_count": 6
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"desired_columns = [\n",
+					"    \"Publisher\", \"ISSN1\", \"ISSN2\", \"Title\", \"Source\", \"Model\", \"Model Notes\",\n",
+					"    \"APC\", \"Currency\", \"License Types\", \"Year\", \"PublisherID\", \"JoiningID\",\n",
+					"    \"Imprint\", \"Society\"\n",
+					"]\n",
+					"\n",
+					"# Reorder the columns based on desired schema\n",
+					"df_reordered = new_df.select([col for col in desired_columns if col in new_df.columns])"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"df_reordered.coalesce(1).write.mode(\"overwrite\").csv(MDPI_SILVER_PATH, header=True,  encoding=\"UTF-8\")"
+				],
+				"execution_count": 7
+			}
+		]
+	}
+}

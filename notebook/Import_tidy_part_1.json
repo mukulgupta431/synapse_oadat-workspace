@@ -1,0 +1,189 @@
+{
+	"name": "Import_tidy_part_1",
+	"properties": {
+		"folder": {
+			"name": "MarketSizing"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "vcore48",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "56g",
+			"driverCores": 8,
+			"executorMemory": "56g",
+			"executorCores": 8,
+			"numExecutors": 3,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "true",
+				"spark.dynamicAllocation.minExecutors": "3",
+				"spark.dynamicAllocation.maxExecutors": "5",
+				"spark.autotune.trackingId": "6aa2d053-3605-4a53-a157-e2c7e3663519"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/vcore48",
+				"name": "vcore48",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/vcore48",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 10,
+				"cores": 8,
+				"memory": 56,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import SparkSession\n",
+					"from pyspark.sql import functions as F\n",
+					"from pyspark.sql import types as T\n",
+					"from pyspark.sql import functions as F\n",
+					"from pyspark.sql.types import *\n",
+					"from delta.tables import DeltaTable"
+				],
+				"execution_count": 1
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Partitioning\n",
+					"# spark.conf.set(\"spark.sql.shuffle.partitions\", \"2000\")   # tune later if partitions are too small/large\n",
+					"\n",
+					"# Shuffle + heartbeat stability\n",
+					"#spark.conf.set(\"spark.network.timeout\", \"800s\")\n",
+					"#spark.conf.set(\"spark.executor.heartbeatInterval\", \"60s\")\n",
+					"spark.conf.set(\"spark.shuffle.io.maxRetries\", \"10\")\n",
+					"spark.conf.set(\"spark.shuffle.io.retryWait\", \"10s\")\n",
+					"\n",
+					"# Skew handling\n",
+					"spark.conf.set(\"spark.sql.adaptive.enabled\", \"true\")\n",
+					"\n",
+					"# Broadcast joins\n",
+					"spark.conf.set(\"spark.sql.autoBroadcastJoinThreshold\", -1)  # disable auto\n",
+					""
+				],
+				"execution_count": 2
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# =====================\n",
+					"# CONFIG\n",
+					"# =====================\n",
+					"INPUT_JSON_PATH = \"abfss://openalex@dloadatdl.dfs.core.windows.net/processed_v1/works_csv_final/\"\n",
+					"#INPUT_JSON_PATH = \"abfss://openalex@dloadatdl.dfs.core.windows.net/raw/data/works/*/*.gz\"\n",
+					"OUTPUT_FINAL_PATH =\"abfss://openalex@dloadatdl.dfs.core.windows.net/processed_v1/doi_tidy_all\"\n",
+					"\n",
+					"# =====================\n",
+					"# LOAD JSON\n",
+					"# =====================\n",
+					"#works_raw = spark.read.json(INPUT_JSON_PATH).alias(\"w\")\n",
+					"#works_raw = spark.read.option(\"multiline\", \"true\").json(INPUT_JSON_PATH).alias(\"w\")\n",
+					"#works_raw = spark.read.option(\"multiline\", \"true\").schema(works_schema).json(INPUT_JSON_PATH)\n",
+					"df = spark.read.format(\"delta\").load(INPUT_JSON_PATH)\n",
+					"#df.printSchema()\n",
+					"#df.show(20, truncate=False)"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import SparkSession, Window\n",
+					"# --- Apply SQL logic in PySpark ---\n",
+					"\n",
+					"# Grouping fields (same as SQL GROUP BY)\n",
+					"group_fields = [\n",
+					"    \"year\",\n",
+					"    \"type\",\n",
+					"    \"type_crossref\",\n",
+					"    \"sources_id\",\n",
+					"    \"journal_issn_l\",\n",
+					"    \"oa_status\",\n",
+					"    \"license\",\n",
+					"    \"version\",\n",
+					"    \"host_type\"\n",
+					"]\n",
+					"\n",
+					"# Aggregations\n",
+					"agg_df = df.groupBy(group_fields).agg(\n",
+					"    F.count(\"*\").alias(\"Articles\"),\n",
+					"    F.sum(F.col(\"cited_by_count\").cast(\"long\")).alias(\"cited_by_count\"),\n",
+					"    F.sum(F.col(\"cited_works_count\").cast(\"long\")).alias(\"cited_works_count\"),\n",
+					"    F.concat_ws(\"\", F.collect_list(\"topic_list\")).alias(\"topic_list\")  # string_agg with no delimiter\n",
+					")\n",
+					"\n",
+					"# Add fixed & duplicate fields\n",
+					"agg_df = agg_df.withColumn(\"Is_Article\", F.lit(1)) \\\n",
+					"    .withColumn(\"sources_id_as_stated\", F.col(\"sources_id\")) \\\n",
+					"    .withColumn(\"issn_l\", F.col(\"journal_issn_l\")) \\\n",
+					"    .withColumn(\"issn_l_as_stated\", F.col(\"journal_issn_l\"))\n",
+					"\n",
+					"# Add row_number like SQL\n",
+					"#w = Window.orderBy(F.monotonically_increasing_id())\n",
+					"#agg_df = agg_df.withColumn(\"DOI_tidy_ID\", F.row_number().over(w))\n",
+					"agg_df = agg_df.withColumn(\"DOI_tidy_ID\", F.monotonically_increasing_id())\n",
+					"\n",
+					"# Reorder columns to match SQL output\n",
+					"final_cols = [\n",
+					"    \"DOI_tidy_ID\", \"year\", \"type\", \"type_crossref\", \"sources_id\", \"sources_id_as_stated\",\n",
+					"    \"issn_l\", \"issn_l_as_stated\", \"oa_status\", \"license\", \"version\", \"host_type\",\n",
+					"    \"Is_Article\", \"Articles\", \"cited_by_count\", \"cited_works_count\", \"topic_list\"\n",
+					"]\n",
+					"result_df = agg_df.select(final_cols)\n",
+					"\n",
+					""
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"(\n",
+					"    result_df\n",
+					"    .write\n",
+					"    .format(\"delta\")   # Use Delta format\n",
+					"    .mode(\"overwrite\") # Overwrite existing data\n",
+					"    .save(OUTPUT_FINAL_PATH)\n",
+					")\n",
+					""
+				],
+				"execution_count": 5
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"#(\n",
+					"#    result_df\n",
+					"#    .write\n",
+					"#    .mode(\"overwrite\")\n",
+					"#    .option(\"header\", \"true\")\n",
+					"#    .csv(OUTPUT_FINAL_PATH)\n",
+					"#)"
+				],
+				"execution_count": 6
+			}
+		]
+	}
+}

@@ -1,0 +1,408 @@
+{
+	"name": "03_TnF_Silver_Composer",
+	"properties": {
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "46f2feca-c118-4ad3-9bf9-f9a7ac36827f"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"import requests\n",
+					"from bs4 import BeautifulSoup\n",
+					"from pyspark.sql import SparkSession, Row\n",
+					"from pyspark.sql.types import StructType, StructField, StringType, IntegerType\n",
+					"from pyspark.sql.functions import regexp_extract, trim, when, col, lit\n",
+					"\n",
+					"Year = '2025'"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"ALL_JOURNAL ='abfss://apc@dloadatdl.dfs.core.windows.net/bronze/Taylor & Francis/all/*.csv'\n",
+					"APC_PRICE = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/Taylor & Francis/price/*.csv'\n",
+					"\n",
+					"SILVER_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/silver/Taylor & Francis/all/'"
+				],
+				"execution_count": 2
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"def get_all_dove_press_journals():\n",
+					"    # this needds to read from the property file\n",
+					"    dove_press_journals = \"https://www.dovepress.com/author-guidelines/journal-publishing-fees\"\n",
+					"    schema = StructType([\n",
+					"        StructField(\"title\", StringType(), True),\n",
+					"        StructField(\"title_url\", StringType(), True)\n",
+					"    ])\n",
+					"\n",
+					"    response = requests.get(dove_press_journals)\n",
+					"    soup = BeautifulSoup(response.text, 'html.parser')\n",
+					"\n",
+					"    journals_div = soup.find(\"div\", {\"class\": \"articles\"})\n",
+					"    journals_list_all = journals_div.find_all(\"ul\")\n",
+					"\n",
+					"    # List to store journal names and URLs\n",
+					"    journals = []\n",
+					"\n",
+					"    # Loop through each <ul> element and then each <li> within them\n",
+					"    for ul in journals_list_all:\n",
+					"        for li in ul.find_all(\"li\"):\n",
+					"            a_tag = li.find(\"a\")\n",
+					"            if a_tag:  # Only consider <li> with <a> tags (journals list)\n",
+					"                journal_name = a_tag.text.strip()\n",
+					"                journal_url = a_tag['href']\n",
+					"                journals.append(Row(\n",
+					"                    title=journal_name,\n",
+					"                    title_url=journal_url\n",
+					"                ))\n",
+					"\n",
+					"    journals_df = spark.createDataFrame(journals, schema)\n",
+					"    return journals_df"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"def get_dove_press_issn_apc(url):\n",
+					"    url = \"https://www.dovepress.com/\" + url\n",
+					"    response = requests.get(url)\n",
+					"    soup = BeautifulSoup(response.text, 'html.parser')\n",
+					"    body_div = soup.find(\"div\", {\"class\": \"tabs-padding group\"})\n",
+					"    journal_apc_table = soup.find(\"table\", {\"class\": \"slats list-journal-pricing-band\"})\n",
+					"    issn = body_div.find(\"h3\").text.strip()\n",
+					"\n",
+					"    \n",
+					"    usd_apc = None\n",
+					"    if journal_apc_table:\n",
+					"        rows = journal_apc_table.find_all(\"tr\")\n",
+					"        if len(rows) > 1:\n",
+					"            usd_price_cell = rows[1].find_all(\"td\")[0]\n",
+					"            usd_price = usd_price_cell.text.strip()\n",
+					"\n",
+					"    return(usd_price,issn)"
+				],
+				"execution_count": 4
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"def enrich_dove_press_journals_issn_apc(dove_press_journals_df):\n",
+					"    # Get the ISSN and APC for each journal and return a plain string\n",
+					"    dove_press_journals_issn_apc_df = dove_press_journals_df.rdd.map(lambda row: Row(\n",
+					"        title=row.title,\n",
+					"        title_url=row.title_url,\n",
+					"        apc_issn=\", \".join(get_dove_press_issn_apc(row.title_url))  # Combine APC and ISSN as a string\n",
+					"    )).toDF()\n",
+					"\n",
+					"    return dove_press_journals_issn_apc_df"
+				],
+				"execution_count": 5
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Get all Dove Press journals\n",
+					"dove_press_journals_df = get_all_dove_press_journals()\n",
+					"dove_press_journals_df = enrich_dove_press_journals_issn_apc(dove_press_journals_df)"
+				],
+				"execution_count": 6
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Regular expressions\n",
+					"apc_pattern = r\"US\\$(\\d+\\.?\\d*)\"\n",
+					"issn_pattern = r\"ISSN: (\\d{4}-\\d{4})\"\n",
+					"\n",
+					"# Extract APC_USD\n",
+					"dove_press_journals_df = dove_press_journals_df.withColumn(\"APC_USD\", regexp_extract(\"apc_issn\", apc_pattern, 1))\n",
+					"\n",
+					"# Extract the first ISSN\n",
+					"dove_press_journals_df = dove_press_journals_df.withColumn(\"ISSN\", regexp_extract(\"apc_issn\", issn_pattern, 1))"
+				],
+				"execution_count": 7
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"all_journal_df = spark.read.option(\"header\",True) \\\n",
+					"    .option(\"delimiter\",\",\") \\\n",
+					"    .option(\"inferSchema\",True) \\\n",
+					"    .csv(ALL_JOURNAL)\n",
+					"\n",
+					"price_df = spark.read.option(\"header\",True) \\\n",
+					"    .option(\"delimiter\",\",\") \\\n",
+					"    .option(\"inferSchema\",True) \\\n",
+					"    .csv(APC_PRICE)    "
+				],
+				"execution_count": 8
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"merged_df = all_journal_df.join(\n",
+					"    price_df, \n",
+					"    all_journal_df[\"issnOnline\"] == price_df[\"Online ISSN\"], \n",
+					"    \"left\"  # Use \"left\" join to keep all rows from all_journal\n",
+					")\n",
+					"\n",
+					"# Select required columns\n",
+					"final_df = merged_df.select(\n",
+					"    all_journal_df[\"*\"],  # All columns from all_journal\n",
+					"    #price_df[\"Ownership\"], \n",
+					"    price_df[\"List Price APC (USD)\"]\n",
+					")\n",
+					"\n",
+					"# to get Dove press pirce\n",
+					"\n",
+					"merged_with_Dove_df = final_df.join(\n",
+					"    dove_press_journals_df,\n",
+					"    trim(final_df[\"issnPrint\"]) == trim(dove_press_journals_df[\"ISSN\"]),\n",
+					"    \"left\"\n",
+					")\n",
+					"\n",
+					"\n",
+					"final_with_Dove_df = merged_with_Dove_df.select(\n",
+					"    final_df[\"*\"],\n",
+					"    dove_press_journals_df['APC_USD']\n",
+					")\n",
+					"\n",
+					"final_with_Dove_df = final_with_Dove_df.withColumn(\n",
+					"    \"List Price APC (USD)\", \n",
+					"    when(col(\"imprint\") == \"Dove\", col(\"APC_USD\"))\n",
+					"    .otherwise(col(\"List Price APC (USD)\"))  # Keep existing values if imprint is not 'Dove'\n",
+					")\n",
+					"\n",
+					"final_with_Dove_df = final_with_Dove_df.drop(\"APC_USD\")\n",
+					"\n",
+					"# Show the resulting DataFrame\n",
+					"final_with_Dove_df.show(truncate=False)"
+				],
+				"execution_count": 9
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"new_df = final_with_Dove_df.select(\n",
+					"    lit(\"Taylor & Francis\").alias(\"Publisher\"),\n",
+					"    col(\"issnPrint\").alias(\"ISSN1\"),\n",
+					"    col(\"issnOnline\").alias(\"ISSN2\"),\n",
+					"    col(\"title\").alias(\"Title\"),\n",
+					"    lit(\"Publisher Price List\").alias(\"Source\"),\n",
+					"    lit(\"\").alias(\"Model Notes\"),\n",
+					"    col(\"List Price APC (USD)\").alias(\"APC\"),\n",
+					"    lit(\"USD\").alias(\"Currency\"),\n",
+					"    lit(Year).alias(\"Year\"),\n",
+					"    col(\"acronym\").alias(\"PublisherID\"),\n",
+					"    col(\"acronym\").alias(\"JoiningID\"),\n",
+					"    col(\"licenseOption1\").alias(\"License Types\"),\n",
+					"    col(\"imprint\").alias(\"Imprint\"),\n",
+					"    lit(\"\").alias('Society'),\n",
+					"    col(\"oaStatus\").alias(\"oaStatus\")\n",
+					")\n",
+					"\n",
+					"new_df = new_df.withColumn(\n",
+					"    \"Model\",  # new column name for the updated status\n",
+					"    when(col(\"oaStatus\") == \"Open select\", \"Hybrid\")\n",
+					"     .when(col(\"oaStatus\").contains(\"open access\"), \"Fully OA\")\n",
+					"     .otherwise(\"\")\n",
+					")\n",
+					"\n",
+					"new_df.drop('oaStatus')\n",
+					"new_df.show(n=100, truncate=False)\n",
+					"\n",
+					""
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"desired_columns = [\n",
+					"    \"Publisher\", \"ISSN1\", \"ISSN2\", \"Title\", \"Source\", \"Model\", \"Model Notes\",\n",
+					"    \"APC\", \"Currency\", \"License Types\", \"Year\", \"PublisherID\", \"JoiningID\",\n",
+					"    \"Imprint\", \"Society\"\n",
+					"]\n",
+					"\n",
+					"# Reorder the columns based on desired schema\n",
+					"df_reordered = new_df.select([col for col in desired_columns if col in new_df.columns])"
+				]
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"df_reordered.coalesce(1).write.mode(\"overwrite\").csv(SILVER_PATH, header=True,  encoding=\"UTF-8\")"
+				],
+				"execution_count": 11
+			}
+		]
+	}
+}

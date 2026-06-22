@@ -1,0 +1,94 @@
+{
+	"name": "Notebook 2",
+	"properties": {
+		"folder": {
+			"name": "MarketSizing"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "0bca98b1-c75c-4f37-9cab-43077687c6d6"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"import os\n",
+					"from notebookutils import mssparkutils\n",
+					"\n",
+					"base_path = \"abfss://openalex@dloadatdl.dfs.core.windows.net/raw/data/works/\"\n",
+					"\n",
+					"# List folders inside base_path\n",
+					"folders = mssparkutils.fs.ls(base_path)\n",
+					"\n",
+					"# Extract updated_date values\n",
+					"dates = [os.path.basename(f.name).replace(\"updated_date=\", \"\").replace(\"/\", \"\") for f in folders]\n",
+					"\n",
+					"print(dates)\n",
+					""
+				],
+				"execution_count": 5
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"base_path = \"abfss://openalex@dloadatdl.dfs.core.windows.net/raw/data/works/\"\n",
+					"df = spark.read.option(\"basePath\", base_path).json(f\"{base_path}/updated_date=*/\")\n",
+					"\n",
+					"dates = (\n",
+					"    df.select(\"updated_date\")\n",
+					"      .distinct()\n",
+					"      .orderBy(\"updated_date\")\n",
+					"      .rdd.flatMap(lambda x: x)\n",
+					"      .collect()\n",
+					")\n",
+					"\n",
+					"print(dates)\n",
+					""
+				]
+			}
+		]
+	}
+}

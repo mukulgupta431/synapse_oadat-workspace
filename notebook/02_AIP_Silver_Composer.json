@@ -1,0 +1,581 @@
+{
+	"name": "02_AIP_Silver_Composer",
+	"properties": {
+		"folder": {
+			"name": "Misc"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "8ec99925-3d1b-4620-831e-ea8cd6201839"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"import requests\n",
+					"from bs4 import BeautifulSoup\n",
+					"from pyspark.sql import SparkSession, Row, functions as F, functions as udf\n",
+					"from pyspark.sql.functions import col, trim, lit, upper, when, coalesce, trim\n",
+					"from pyspark.sql.types import StructType, StructField, StringType, IntegerType\n",
+					"import re\n",
+					""
+				],
+				"execution_count": 8
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"Year = 2025\n",
+					"\n",
+					"all_journals_aipp_url = \"https://publishing.aip.org/publications/find-the-right-journal/\"\n",
+					"open_access_details_url = 'https://publishing.aip.org/resources/researchers/open-science/open-access/'\n",
+					"kbart_file_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/American Institute of Physics (AIP)/kbart/kbart.csv'\n",
+					"silver_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/silver/American Institute of Physics (AIP)/all/'\n",
+					"\n",
+					"# This is the default APC. This needs to be validated before every year run\n",
+					"# https://publishing.aip.org/resources/researchers/open-science/open-access/\n",
+					"APC_OA = 1800\n",
+					"APC_GOLD = 2750\n",
+					"APC_HYBRID = 3800\n",
+					"\n",
+					"# The publication fee for Open Access articles in AIP Advances is $1500 USD\n",
+					"# The publication fee for Open Access articles in all other Gold Open Access AIP Publishing titles is $2750 USD.\n",
+					"#  The $3500 USD fee for for Publishing Open Access in our Subscription Journals through Author Select (hybrid)\n",
+					"\n",
+					"# update this sheet for any ndw journal added\n",
+					"society_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/American Institute of Physics (AIP)/society/society.csv'"
+				],
+				"execution_count": 9
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# This methid is used to extract print and online issn details form 'https://publishing.aip.org/publications/find-the-right-journal/\n",
+					"def extract_issn(issn_info):\n",
+					"    if issn_info is None:\n",
+					"        return None, None\n",
+					"    \n",
+					"    # Define patterns for print and online ISSN\n",
+					"    #print_issn_pattern = r\"Print:\\s*([\\d-]+)\"\n",
+					"    #online_issn_pattern = r\"Online(?: only)?:\\s*([\\d-]+)\"\n",
+					"    print_issn_pattern = r\"Print:\\s*([0-9]{4}-[0-9]{3}[0-9X]+)\"\n",
+					"    online_issn_pattern = r\"Online(?: only)?:\\s*([0-9]{4}-[0-9]{3}[0-9X]+)\"\n",
+					"\n",
+					"    # Extract ISSNs using regex\n",
+					"    print_issn = re.search(print_issn_pattern, issn_info)\n",
+					"    online_issn = re.search(online_issn_pattern, issn_info)\n",
+					"\n",
+					"    # Return ISSNs or None if not found\n",
+					"    return (\n",
+					"        print_issn.group(1) if print_issn else None,\n",
+					"        online_issn.group(1) if online_issn else None\n",
+					"    )"
+				],
+				"execution_count": 10
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Define the schema this will be used to extract journl data from https://publishing.aip.org/publications/find-the-right-journal/\n",
+					"schema = StructType([\n",
+					"    StructField(\"title\", StringType(), True),\n",
+					"    StructField(\"title_url\", StringType(), True),\n",
+					"    StructField(\"access_type\", StringType(), True),\n",
+					"    StructField(\"issn_info\", StringType(), True),\n",
+					"    StructField(\"topics\", StringType(), True),\n",
+					"    StructField(\"impact_factor\", StringType(), True),\n",
+					"    StructField(\"citations\", StringType(), True),\n",
+					"    StructField(\"frequency\", StringType(), True),\n",
+					"    StructField(\"submit_url\", StringType(), True)\n",
+					"])\n",
+					"\n",
+					"# Define the UDF, specifying the return type as StructType with print and electronic ISSN fields\n",
+					"extract_issn_udf = F.udf(extract_issn, StructType([\n",
+					"    StructField(\"print_issn\", StringType(), True),\n",
+					"    StructField(\"electronic_issn\", StringType(), True)\n",
+					"]))"
+				],
+				"execution_count": 11
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Read the jouranl information from kbart\n",
+					"kbart_df = spark.read.csv(kbart_file_path, header=True, inferSchema=True)\n",
+					"# Remove rows where publication_type is not \"serial\".\n",
+					"# Ensure last_date_online is blank (null).\n",
+					"# Ensure publisher is not \"ACM\".\n",
+					"\n",
+					"filtered_kbart_df = kbart_df.filter(\n",
+					"    (col(\"publication_type\") == \"Serial\") &\n",
+					"    ((trim(col(\"date_last_issue_online\")).isNull()) | (trim(col(\"date_last_issue_online\")) == \"\"))\n",
+					")\n",
+					""
+				],
+				"execution_count": 12
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Data extraction from \"https://publishing.aip.org/publications/find-the-right-journal/\"\n",
+					"response = requests.get(all_journals_aipp_url)\n",
+					"soup = BeautifulSoup(response.text, 'html.parser')\n",
+					"\n",
+					"# Step 3: Locate the table containing the journal information\n",
+					"table = soup.find(\"table\", {\"class\": \"journals-table\"})\n",
+					"\n",
+					"# Step 4: Extract the data from the table rows\n",
+					"journals = []\n",
+					"\n",
+					"for row in table.find_all(\"tr\")[1:]:  # Skip the header row\n",
+					"    columns = row.find_all(\"td\")\n",
+					"    \n",
+					"    # Extract title and URL\n",
+					"    title_tag = columns[0].find(\"a\")\n",
+					"    title = title_tag.get_text(strip=True) if title_tag else None\n",
+					"    title_url = title_tag[\"href\"] if title_tag else None\n",
+					"    \n",
+					"    # Extract access type and ISSN details\n",
+					"    access_type_tag = columns[0].find(\"em\")\n",
+					"    access_type = access_type_tag.get_text(strip=True) if access_type_tag else None\n",
+					"    issn_info = columns[0].find(\"p\", class_=\"footnote\").get_text(strip=True) if columns[0].find(\"p\", class_=\"footnote\") else None\n",
+					"\n",
+					"    # Extract other fields\n",
+					"    topics = columns[1].get_text(strip=True) if len(columns) > 1 else None\n",
+					"    impact_factor = columns[2].get_text(strip=True) if len(columns) > 2 else None\n",
+					"    citations = columns[3].get_text(strip=True) if len(columns) > 3 else None\n",
+					"    frequency = columns[4].get_text(strip=True) if len(columns) > 4 else None\n",
+					"    submit_url = columns[5].find(\"a\")[\"href\"] if columns[5].find(\"a\") else None\n",
+					"\n",
+					"    # Add to journals list\n",
+					"    journals.append(Row(\n",
+					"        title=title,\n",
+					"        title_url=title_url,\n",
+					"        access_type=access_type,\n",
+					"        issn_info=issn_info,\n",
+					"        topics=topics,\n",
+					"        impact_factor=impact_factor,\n",
+					"        citations=citations,\n",
+					"        frequency=frequency,\n",
+					"        submit_url=submit_url\n",
+					"    ))\n",
+					""
+				],
+				"execution_count": 13
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"journal_df = spark.createDataFrame(journals, schema=schema)\n",
+					"\n",
+					"# Apply the UDF to add print_issn and electronic_issn columns to the DataFrame\n",
+					"journal_df = journal_df.withColumn(\"issn_struct\", extract_issn_udf(F.col(\"issn_info\"))) \\\n",
+					"                       .withColumn(\"print_issn\", F.col(\"issn_struct.print_issn\")) \\\n",
+					"                       .withColumn(\"electronic_issn\", F.col(\"issn_struct.electronic_issn\")) \\\n",
+					"                       .drop(\"issn_struct\")\n",
+					"\n",
+					"journal_df = journal_df.withColumn(\n",
+					"    \"apc_url\", \n",
+					"    F.when(\n",
+					"        F.col(\"title_url\").isNotNull() & (F.col(\"title_url\") != \"\"), \n",
+					"        F.concat(F.col(\"title_url\"), F.lit(\"/pages/charges\"))\n",
+					"    ).otherwise(F.lit(\"\"))  # If title_url is null or empty, set apc_url to an empty string\n",
+					")                       "
+				],
+				"execution_count": 14
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# user define method to extract type of jounrl like gold and Dimand\n",
+					"def extract_journal_type(section_header):\n",
+					"    response = requests.get(open_access_details_url)\n",
+					"    soup = BeautifulSoup(response.text, 'html.parser')\n",
+					"    div = soup.find(\"div\", class_=\"content clearfix\")\n",
+					"    journals = []\n",
+					"    section = div.find('h3', text=section_header)\n",
+					"    if section:\n",
+					"        ul = section.find_next_sibling('ul')\n",
+					"        if ul:\n",
+					"            for li in ul.find_all('li'):\n",
+					"                a_tag = li.find('a')\n",
+					"                if a_tag:\n",
+					"                    journal_name = a_tag.text.strip()\n",
+					"                    journal_url = a_tag.get('href').strip()\n",
+					"                    journals.append((journal_name, journal_url))\n",
+					"    return journals"
+				],
+				"execution_count": 15
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Extract Gold Open Access journals\n",
+					"gold_journals = extract_journal_type(\"Publishing in Gold Open Access Journals\")\n",
+					"# Extract Diamond Open Access journals\n",
+					"diamond_journals = extract_journal_type(\"Diamond Open Access Journals\")\n",
+					"# Print the results\n",
+					"print(\"Gold Open Access Journals:\")\n",
+					"for name, url in gold_journals:\n",
+					"    print(f\"{name}: {url}\")\n",
+					"\n",
+					"print(\"\\nDiamond Open Access Journals:\")\n",
+					"for name, url in diamond_journals:\n",
+					"    print(f\"{name}: {url}\")\n",
+					"\n",
+					"# Convert to Row objects for PySpark\n",
+					"gold_rows = [Row(title=journal[0], url=journal[1], type=\"Gold\") for journal in gold_journals]\n",
+					"diamond_rows = [Row(title=journal[0], url=journal[1], type=\"Diamond\") for journal in diamond_journals]\n",
+					"\n",
+					"# Create DataFrames from the Row objects\n",
+					"gold_df = spark.createDataFrame(gold_rows)\n",
+					"diamond_df = spark.createDataFrame(diamond_rows)\n",
+					"\n",
+					"# Combine the two DataFrames\n",
+					"combined_df = gold_df.union(diamond_df)\n",
+					"\n",
+					"# Show the combined DataFrame\n",
+					"combined_df.show(truncate=False)"
+				],
+				"execution_count": 16
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Add Journal Type (gold or diamond) to journal_df\n",
+					"result_df = journal_df.join(\n",
+					"    combined_df.select(\"title\", \"type\"),  # Selecting relevant columns from apc_price_df\n",
+					"    on=\"title\",  # Joining on the e_issn column\n",
+					"    how=\"left\"    # Left join to retain all rows from all_journal_df\n",
+					")\n",
+					""
+				],
+				"execution_count": 17
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"new_df = result_df.select(\n",
+					"    lit(\"American Institute of Physics (AIP)\").alias(\"Publisher\"),\n",
+					"    col(\"print_issn\").alias(\"ISSN1\"),\n",
+					"    col(\"electronic_issn\").alias(\"ISSN2\"),\n",
+					"    col(\"title\").alias(\"Title\"),\n",
+					"    lit(\"Publisher Website via Misc Publisher APCs list\").alias(\"Source\"),\n",
+					"    when(col(\"access_type\") == \"Open Access\", lit(\"Fully OA\")).otherwise(lit(\"None\")).alias(\"Model\"),\n",
+					"    lit(\"\").alias(\"Model Notes\"),\n",
+					"    when(col(\"type\") == \"Gold\", lit(APC_OA)).when(col(\"type\") == \"Diamond\", lit(APC_GOLD)).otherwise(lit(APC_HYBRID)).alias(\"APC\"),\n",
+					"    lit(\"USD\").alias(\"Currency\"),\n",
+					"    lit(\"\").alias(\"License Types\"),\n",
+					"    lit(Year).alias(\"Year\"),\n",
+					"    col(\"title_url\").alias(\"Publisher URL\"),\n",
+					"    col(\"title_url\").alias(\"title_url\"),\n",
+					"    lit(\"American Institute of Physics (AIP)\").alias(\"Society\"),\n",
+					"    lit(\"\").alias(\"Imprint\")\n",
+					")\n",
+					"\n",
+					"# Add product_id column\n",
+					"new_df = new_df.withColumn(\n",
+					"    \"PublisherID\",\n",
+					"    F.expr(\"right(regexp_replace(title_url, '/current', ''), 3)\")\n",
+					")\n",
+					"\n",
+					"# Add product_id column\n",
+					"new_df = new_df.withColumn(\n",
+					"    \"JoiningID\",\n",
+					"    F.expr(\"right(regexp_replace(title_url, '/current', ''), 3)\")\n",
+					")\n",
+					""
+				],
+				"execution_count": 18
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"#getting model from filtered_kbart_df\n",
+					"\n",
+					"new_df = new_df.join(filtered_kbart_df,\n",
+					"                     new_df['PublisherID'] == filtered_kbart_df['title_id'],\n",
+					"                      how=\"left\"\n",
+					"                    ).select(new_df['*'],\n",
+					"                            col('access_type').alias(\"access_type_from_kbart\")\n",
+					"                    )\n",
+					"new_df = new_df.withColumn(\n",
+					"    \"Model\",\n",
+					"    when(col(\"access_type_from_kbart\") == \"Payment\", lit(\"Hybrid\"))\n",
+					"    .when(col(\"access_type_from_kbart\") == \"Free\", lit(\"Fully OA\"))\n",
+					"    .otherwise(col(\"Model\"))\n",
+					")\n",
+					"\n",
+					"new_df = new_df.withColumn(\n",
+					"    \"LicenseType\",\n",
+					"    when(col(\"Model\") == \"Fully OA\", lit(\"CC BY\"))\n",
+					"    .when(col(\"Model\") == \"Hybrid\", lit(\"CC BY\"))\n",
+					"    .otherwise(lit(\"\"))\n",
+					")\n",
+					"new_df.show(100, truncate=False)"
+				],
+				"execution_count": 19
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"society_df = spark.read.csv(society_path, header=True, inferSchema=True)\n",
+					"\n",
+					"updated_df = new_df.alias(\"new\").join(\n",
+					"    society_df.alias(\"society\"), \n",
+					"    trim(new_df[\"title\"]) == trim(society_df[\"Title\"]), \n",
+					"    \"left\"\n",
+					").select(\n",
+					"    new_df[\"*\"], \n",
+					"    coalesce(society_df[\"Society\"], new_df[\"Society\"]).alias(\"Updated_Society\")\n",
+					")\n",
+					"\n",
+					"# Drop the old Society column and rename the updated one.\n",
+					"result_df = updated_df.drop(\"Society\").withColumnRenamed(\"Updated_Society\", \"Society\")\n",
+					"\n",
+					"result_df.show(truncate=False)\n",
+					""
+				],
+				"execution_count": 20
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"desired_columns = [\n",
+					"    \"Publisher\", \"ISSN1\", \"ISSN2\", \"Title\", \"Source\", \"Model\", \"Model Notes\",\n",
+					"    \"APC\", \"Currency\", \"License Types\", \"Year\", \"PublisherID\", \"JoiningID\",\n",
+					"    \"Imprint\", \"Society\"\n",
+					"]\n",
+					"\n",
+					"# Reorder the columns based on desired schema\n",
+					"df_reordered = result_df.select([col for col in desired_columns if col in new_df.columns])"
+				],
+				"execution_count": 21
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"df_reordered.show()"
+				],
+				"execution_count": 22
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"\n",
+					"df_reordered.coalesce(1).write.mode(\"overwrite\").csv(silver_path, header=True,  encoding=\"UTF-8\")\n",
+					""
+				],
+				"execution_count": 23
+			}
+		]
+	}
+}

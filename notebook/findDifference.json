@@ -1,0 +1,86 @@
+{
+	"name": "findDifference",
+	"properties": {
+		"folder": {
+			"name": "MarketSizing"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "e36b6529-abaa-4be9-8290-60fd006bbb0a"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import SparkSession\n",
+					"from pyspark.sql.functions import lit\n",
+					"\n",
+					"# ---------------------\n",
+					"# Spark Session\n",
+					"# ---------------------\n",
+					"\n",
+					"# ---------------------\n",
+					"# File paths\n",
+					"# ---------------------\n",
+					"file1 = \"abfss://general@dloadatdl.dfs.core.windows.net/MS_Crossref_tidy/titleFile (2).csv\"\n",
+					"file2 = \"abfss://general@dloadatdl.dfs.core.windows.net/MS_Crossref_tidy/titleFile (1).csv\"\n",
+					"\n",
+					"# ---------------------\n",
+					"# Load both CSVs\n",
+					"# ---------------------\n",
+					"df1 = spark.read.option(\"header\", \"true\").csv(file1)\n",
+					"df2 = spark.read.option(\"header\", \"true\").csv(file2)\n",
+					"\n",
+					"# Add source markers (to identify later)\n",
+					"df1 = df1.withColumn(\"source\", lit(\"file1\"))\n",
+					"df2 = df2.withColumn(\"source\", lit(\"file2\"))\n",
+					"\n",
+					"# ---------------------\n",
+					"# Compare Data\n",
+					"# ---------------------\n",
+					"# Find rows in df1 not in df2\n",
+					"diff1 = df1.subtract(df2)\n",
+					"\n",
+					"# Find rows in df2 not in df1\n",
+					"diff2 = df2.subtract(df1)\n",
+					"\n",
+					"# Union differences\n",
+					"diff = diff1.union(diff2)\n",
+					"\n",
+					"# ---------------------\n",
+					"# Check and Report\n",
+					"# ---------------------\n",
+					"if diff.count() == 0:\n",
+					"    print(\"NO DIFFERENCE: Both files are identical ✅\")\n",
+					"else:\n",
+					"    print(\"DIFFERENCE FOUND ❌\")\n",
+					"    diff.show(truncate=False)  # shows different rows\n",
+					""
+				]
+			}
+		]
+	}
+}

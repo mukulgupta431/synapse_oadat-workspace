@@ -1,0 +1,131 @@
+{
+	"name": "12_IoPP_Bronze_Composer",
+	"properties": {
+		"folder": {
+			"name": "Misc"
+		},
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "4c855087-86a2-491c-94a2-eab45143e4ff"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"import pandas as pd"
+				],
+				"execution_count": 5
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"OA_JOURNAL_EXCEL_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/Institute of Physics Publishing (IoPP)/import/apc.xlsx'\n",
+					"OA_JOURNAL_CSV_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/Institute of Physics Publishing (IoPP)/all/apc.csv'"
+				],
+				"execution_count": 6
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"useCols = 'B:G'\n",
+					"skiprow = 10\n",
+					"nrow= 104\n",
+					"sheet_name = '2025 IOPP APC Pricing - Externa'"
+				],
+				"execution_count": 7
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"df = pd.read_excel(\n",
+					"    OA_JOURNAL_EXCEL_PATH ,\n",
+					"    sheet_name=sheet_name,\n",
+					"    usecols=useCols,\n",
+					"    skiprows=skiprow,\n",
+					"    nrows=nrow,\n",
+					"    header=None           \n",
+					")\n",
+					"df.columns = ['Journal', 'ISSN Online', 'APC_GBP', 'APC_EUR', \"APC_USD\", 'Type of open access'] \n",
+					"df.to_csv(OA_JOURNAL_CSV_PATH, index=False)"
+				],
+				"execution_count": 8
+			}
+		]
+	}
+}

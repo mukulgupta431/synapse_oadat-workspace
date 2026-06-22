@@ -1,0 +1,285 @@
+{
+	"name": "25_CUP_Silver_Composer",
+	"properties": {
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "b0d1a538-0cba-4272-b925-1b2a75904a67"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import SparkSession\n",
+					"from pyspark.sql.functions import col, udf, lit, when, lower, trim\n",
+					"from pyspark.sql import functions as F\n",
+					"from pyspark.sql.types import StringType, StructType, StructField\n",
+					"import pandas as pd\n",
+					""
+				],
+				"execution_count": 15
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"cup_society_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/CUP/society/CUP_Society_List.csv'\n",
+					"cup_price_ListPath_excel = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/CUP/import/PriceList.xlsx'\n",
+					"cup_price_ListPath_csv = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/CUP/priceList/PriceList.csv'\n",
+					"cup_siver_path = 'abfss://apc@dloadatdl.dfs.core.windows.net/silver/CUP/all'\n",
+					"Year = 2025\n",
+					"sheet_name = \"January 2025 Cambridge APC V1\"\n",
+					"useCols = 'A:S'\n",
+					"skiprow = 7\n",
+					"nrow= 428"
+				],
+				"execution_count": 16
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Read the the society details\n",
+					"cup_society_df = spark.read.csv(cup_society_path,header=True,encoding='UTF-8')"
+				],
+				"execution_count": 17
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# create a cup journal df\n",
+					"df = pd.read_excel(\n",
+					"    cup_price_ListPath_excel,\n",
+					"    sheet_name=sheet_name,\n",
+					"    usecols=useCols,       # Reads columns A to Z\n",
+					"    skiprows=skiprow,          # Skips the first 2 rows (so it starts from the 3rd row)\n",
+					"    nrows=nrow            # Reads a total of 232 rows (from row 3 to row 234)\n",
+					")\n",
+					"# Store the df as csv\n",
+					"df.to_csv(cup_price_ListPath_csv, index=False)\n",
+					"\n",
+					"schema = StructType([\n",
+					"    StructField(\"Mnemonic\", StringType(), True),\n",
+					"    StructField(\"Journal\", StringType(), True),\n",
+					"    StructField(\"Print ISSN\", StringType(), True),\n",
+					"    StructField(\"Online ISSN\", StringType(), True),\n",
+					"    StructField(\"New to Cambridge 2024\", StringType(), True),\n",
+					"    StructField(\"New to Cambridge 2025\", StringType(), True),\n",
+					"    StructField(\"HSS_STM\", StringType(), True),\n",
+					"    StructField(\"model\", StringType(), True),\n",
+					"    StructField(\"GBP\", StringType(), True),\n",
+					"    StructField(\"GBP Member Rate\", StringType(), True),\n",
+					"    StructField(\"USD\", StringType(), True),\n",
+					"    StructField(\"USD Member Rate\", StringType(), True),\n",
+					"    StructField(\"EUR\", StringType(), True),\n",
+					"    StructField(\"EUR Member Rate\", StringType(), True),\n",
+					"    StructField(\"AUD\", StringType(), True),\n",
+					"    StructField(\"AUD Member Rate\", StringType(), True),\n",
+					"    StructField(\"APC Notes\", StringType(), True),\n",
+					"    StructField(\"Licence\", StringType(), True),\n",
+					"    StructField(\"url\", StringType(), True)\n",
+					"])\n",
+					"\n",
+					"journal_df = spark.read.csv(cup_price_ListPath_csv,schema=schema)"
+				],
+				"execution_count": 18
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# create APC_Import 1 DF\n",
+					"\n",
+					"new_df = journal_df.select(\n",
+					"    lit(\"CUP\").alias(\"Publisher\"),\n",
+					"    col(\"Print ISSN\").alias(\"ISSN1\"),\n",
+					"    col(\"Online ISSN\").alias(\"ISSN2\"),\n",
+					"    col(\"Journal\").alias(\"Title\"),\n",
+					"    lit(\"Publisher Price List\").alias(\"Source\"),\n",
+					"    col(\"model\").alias(\"Model_temp\"),\n",
+					"    col(\"Licence\").alias(\"Model Notes\"),\n",
+					"    col(\"USD\").alias(\"APC\"),\n",
+					"    lit(\"USD\").alias(\"Currency\"),\n",
+					"    col(\"Licence\").alias(\"License Types\"),\n",
+					"    lit(Year).alias(\"Year\"),\n",
+					"    col(\"Mnemonic\").alias(\"PublisherID\"),\n",
+					"    col(\"Mnemonic\").alias(\"JoiningID\"),\n",
+					"    lit(\"\").alias(\"Imprint\")\n",
+					")\n",
+					"\n",
+					"new_df = new_df.withColumn(\n",
+					"    \"Model\",  # new column name for the updated status\n",
+					"    F.when((F.col(\"Model_temp\").like(\"Hybrid OA\")) | (F.col(\"Model_temp\").like(\"Research Open\")), \"Hybrid\")\n",
+					"     .when(F.col(\"Model_temp\").startswith(\"Gold OA\"), \"Fully OA\")\n",
+					"     .otherwise(\"None\")\n",
+					")"
+				],
+				"execution_count": 19
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Perform a left join on 'PublisherID' from new_df and 'Mnemonic' from cup_society_df\n",
+					"new_df_with_ownership = new_df.join(cup_society_df, new_df.PublisherID == cup_society_df.Mnemonic, 'left') \\\n",
+					"                              .select(new_df[\"*\"], cup_society_df[\"Society\"])"
+				],
+				"execution_count": 20
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"desired_columns = [\n",
+					"    \"Publisher\", \"ISSN1\", \"ISSN2\", \"Title\", \"Source\", \"Model\", \"Model Notes\",\n",
+					"    \"APC\", \"Currency\", \"License Types\", \"Year\", \"PublisherID\", \"JoiningID\",\n",
+					"    \"Imprint\", \"Society\"\n",
+					"]\n",
+					"\n",
+					"# Reorder the columns based on desired schema\n",
+					"df_reordered = new_df_with_ownership.select([col for col in desired_columns if col in new_df.columns])"
+				],
+				"execution_count": 21
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"df_reordered.show()"
+				],
+				"execution_count": 22
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"df_reordered.coalesce(1).write.mode(\"overwrite\").csv(cup_siver_path, header=True,  encoding=\"UTF-8\")"
+				],
+				"execution_count": 23
+			}
+		]
+	}
+}

@@ -1,0 +1,153 @@
+{
+	"name": "24_OUP_Bronze_Compser",
+	"properties": {
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "oadatSparkPook",
+			"type": "BigDataPoolReference"
+		},
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "da537ad9-4a84-4241-8b72-6d3121aad7c0"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/66930ddf-fa17-4910-b3d8-e514f9eb05b0/resourceGroups/oadat/providers/Microsoft.Synapse/workspaces/oadat-workspace/bigDataPools/oadatSparkPook",
+				"name": "oadatSparkPook",
+				"type": "Spark",
+				"endpoint": "https://oadat-workspace.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/oadatSparkPook",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net",
+					"authHeader": null
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"extraHeader": null
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql.functions import col, input_file_name, regexp_extract, udf, explode\n",
+					"from pyspark.sql.types import StringType, ArrayType, StructType, StructField\n",
+					"from pyspark.sql import SparkSession\n",
+					"from pyspark.sql.functions import col, input_file_name, regexp_extract, udf, explode\n",
+					"import zipfile\n",
+					"import io\n",
+					"import pandas as pd"
+				],
+				"execution_count": 1
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"# Set the source and target paths\n",
+					"source_path = \"abfss://apc@dloadatdl.dfs.core.windows.net/bronze/OUP/import/kbart.zip\"\n",
+					"target_folder = \"abfss://apc@dloadatdl.dfs.core.windows.net/bronze/OUP/kbart\""
+				],
+				"execution_count": 2
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"OA_JOURNAL_EXCEL_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/OUP/import/oa_journal_list.xlsx'\n",
+					"OA_JOURNAL_CSV_PATH = 'abfss://apc@dloadatdl.dfs.core.windows.net/bronze/OUP/oa/oa_journal_list.csv'"
+				],
+				"execution_count": 3
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"useCols = 'B:K'\n",
+					"skiprow = 16\n",
+					"nrow= 517\n",
+					"sheet_name = 'Standard APC pricing'"
+				],
+				"execution_count": 6
+			},
+			{
+				"cell_type": "code",
+				"metadata": {
+					"jupyter": {
+						"source_hidden": false,
+						"outputs_hidden": false
+					},
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
+				"source": [
+					"df = pd.read_excel(\n",
+					"    OA_JOURNAL_EXCEL_PATH,\n",
+					"    sheet_name=sheet_name,\n",
+					"    usecols=useCols,\n",
+					"    skiprows=skiprow,\n",
+					"    nrows=nrow            \n",
+					")\n",
+					"\n",
+					"df.to_csv(OA_JOURNAL_CSV_PATH, index=False)"
+				],
+				"execution_count": 7
+			}
+		]
+	}
+}
