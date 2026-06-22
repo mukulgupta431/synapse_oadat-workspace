@@ -1,0 +1,30 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"workspaceName": {
+			"value": "oadat-workspace01"
+		},
+		"ls_oadat_apc_connectionString": {
+			"value": ""
+		},
+		"oadat-workspace-WorkspaceDefaultSqlServer_connectionString": {
+			"value": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=tcp:oadat-workspace.sql.azuresynapse.net,1433;Initial Catalog=@{linkedService().DBName}"
+		},
+		"oadat-workspace01-WorkspaceDefaultSqlServer_connectionString": {
+			"value": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=tcp:oadat-workspace01.sql.azuresynapse.net,1433;Initial Catalog=@{linkedService().DBName}"
+		},
+		"ls_SpringerNature_properties_typeProperties_url": {
+			"value": "https://resource-cms.springernature.com"
+		},
+		"ls_acm_kbart_properties_typeProperties_url": {
+			"value": "https://dl.acm.org/pb-assets/feeds/acm_kbart_periodicals_proceedings.txt"
+		},
+		"oadat-workspace-WorkspaceDefaultStorage_properties_typeProperties_url": {
+			"value": "https://dloadatdl.dfs.core.windows.net"
+		},
+		"oadat-workspace01-WorkspaceDefaultStorage_properties_typeProperties_url": {
+			"value": "https://dloadatdl01.dfs.core.windows.net"
+		}
+	}
+}
